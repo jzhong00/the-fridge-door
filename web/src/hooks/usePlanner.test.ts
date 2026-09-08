@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/api/client";
 import { usePlanner } from "@/hooks/usePlanner";
@@ -18,12 +18,22 @@ vi.mock("@/api/client", async (importOriginal) => ({
 
 const mocked = vi.mocked(api);
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 const plan = (mealId: number | null) => [
   { day: "Monday" as const, meal_id: mealId, servings: mealId ? 4 : null },
 ];
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The hook starts on the Monday of the current real week, and these tests
+  // assert against a fixed one. Without pinning the clock they only passed
+  // during the week of 24 August 2026, and quietly stopped meaning anything
+  // after it. shouldAdvanceTime keeps waitFor working.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date("2026-08-26T09:00:00"));
   mocked.getState.mockResolvedValue(
     makeState({
       week_start: "2026-08-24",
