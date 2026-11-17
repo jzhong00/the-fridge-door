@@ -29,3 +29,7 @@ class IngredientNotOnMealError(MealPlannerError):
 
 class InvalidDayError(MealPlannerError):
     """A day was given that is not one of the seven weekdays."""
+
+
+class WeakPasswordError(MealPlannerError):
+    """A password chosen at signup is too short or too long."""

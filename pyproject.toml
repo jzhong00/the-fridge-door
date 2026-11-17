@@ -18,6 +18,8 @@ dependencies = [
     "psycopg[binary]==3.3.4",
     # Schema migrations, applied automatically at application startup.
     "alembic==1.19.1",
+    # argon2id password hashing (app/security.py).
+    "argon2-cffi==25.1.0",
 ]
 
 [project.optional-dependencies]
