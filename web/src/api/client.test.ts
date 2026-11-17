@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, api } from "./client";
+import { ApiError, api, onGuestSessionStarted } from "./client";
 
 function mockFetch(response: Partial<Response> & { json?: () => unknown }) {
   const fetchMock = vi.fn().mockResolvedValue({
@@ -224,5 +224,91 @@ describe("signed-out requests", () => {
     );
 
     await expect(api.getPlan("2026-08-03")).rejects.toThrow("The database is unavailable.");
+  });
+});
+
+describe("guest sessions and signing in", () => {
+  const notSignedIn = {
+    ok: false,
+    status: 401,
+    json: async () => ({ type: "urn:meal-planner:problem:not-signed-in", detail: "x" }),
+  };
+  const created = { ok: true, status: 201, json: async () => ({}) };
+  const ok = (body: unknown = {}) => ({ ok: true, status: 200, json: async () => body });
+
+  it("asks for sample meals in this week when starting a guest session", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(notSignedIn)
+      .mockResolvedValueOnce(created)
+      .mockResolvedValueOnce(ok());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.getPlan("2026-08-03");
+
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(body.sample_week).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(new Date(`${body.sample_week}T00:00:00`).getDay()).toBe(1); // a Monday
+  });
+
+  it("tells listeners a guest session started", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(notSignedIn).mockResolvedValueOnce(created).mockResolvedValueOnce(ok()),
+    );
+    const listener = vi.fn();
+    const stop = onGuestSessionStarted(listener);
+
+    await api.getPlan("2026-08-03");
+    stop();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay a change into a new guest session", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(notSignedIn).mockResolvedValueOnce(created);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.createMeal("Soup", 2)).rejects.toThrow("that change wasn't saved");
+    // The session was replaced, but the POST was not sent again.
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/meals",
+      "/api/auth/guest",
+    ]);
+  });
+
+  it("finds out who is signed in, starting a guest session if no one is", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(notSignedIn)
+        .mockResolvedValueOnce(created)
+        .mockResolvedValueOnce(ok({ email: null, is_guest: true })),
+    );
+
+    await expect(api.me()).resolves.toEqual({ email: null, is_guest: true });
+  });
+
+  it.each([
+    ["logIn", () => api.logIn("a@b.co", "x")],
+    ["signUp", () => api.signUp("a@b.co", "x")],
+    ["logOut", () => api.logOut()],
+  ])("never starts a guest session from %s", async (_name, call) => {
+    const fetchMock = mockFetch(notSignedIn);
+
+    await expect(call()).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends credentials in the body, not the URL", async () => {
+    const fetchMock = mockFetch(ok({ email: "a@b.co", is_guest: false }));
+
+    await api.logIn("a@b.co", "secret words here");
+
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe("/api/auth/login");
+    expect(init).toMatchObject({ method: "POST" });
+    expect(JSON.parse(init.body)).toEqual({ email: "a@b.co", password: "secret words here" });
   });
 });

@@ -61,8 +61,9 @@ export interface paths {
          * @description Start a guest session: a real account with no email or password.
          *
          *     The app calls this when a request comes back 401, so a first visit
-         *     lands straight in a working planner. A caller who is already signed in
-         *     gets their own account back (200) rather than a second one.
+         *     lands straight in a working planner, with sample meals if it asks for
+         *     them. A caller who is already signed in gets their own account back
+         *     (200) rather than a second one.
          */
         post: operations["start_guest_api_auth_guest_post"];
         delete?: never;
@@ -456,6 +457,15 @@ export interface components {
             /** Display */
             display: string;
         };
+        /**
+         * GuestStart
+         * @description Optional: ask for sample meals, planned in the week containing this
+         *     date (the browser's own week, since the server cannot know its zone).
+         */
+        GuestStart: {
+            /** Sample Week */
+            sample_week?: string | null;
+        };
         /** IngredientAdd */
         IngredientAdd: {
             /** Name */
@@ -666,7 +676,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GuestStart"] | null;
+            };
+        };
         responses: {
             /** @description Already signed in. */
             200: {
@@ -684,6 +698,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Problem Details (RFC 9457) */

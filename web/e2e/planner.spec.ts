@@ -25,7 +25,11 @@ test("add a meal from a template, ingredients included", async ({ page }) => {
   await page.getByRole("button", { name: "Add Chicken Stir Fry" }).click();
 
   await expect(mealRow(page, "Chicken Stir Fry")).toBeVisible();
-  await expect(page.getByText("Serves 4 · 5 ingredients")).toBeVisible();
+  // Within its own card: the sample meals a guest starts with have
+  // summaries too.
+  await expect(
+    page.getByRole("article", { name: "Chicken Stir Fry" }).getByText("Serves 4 · 5 ingredients"),
+  ).toBeVisible();
   // The template is marked as added, so it cannot be added twice.
   await expect(
     page.getByRole("button", { name: "Chicken Stir Fry (added)" }),
@@ -77,8 +81,7 @@ test("plan a week and save it", async ({ page }) => {
 
 test("the grocery list totals the week and converts units", async ({ page }) => {
   await openWeek(page, "2026-01-19");
-  await page.getByRole("button", { name: /Quick add from templates/ }).click();
-  await page.getByRole("button", { name: "Add Spaghetti Bolognese" }).click();
+  // One of the sample meals every guest starts with.
   await expect(mealRow(page, "Spaghetti Bolognese")).toBeVisible();
 
   await page.getByRole("tab", { name: "Weekly Plan" }).click();

@@ -33,7 +33,7 @@ export function MealRow({
   const [servings, setServings] = useState(String(meal.servings));
 
   return (
-    <div className="rounded-xl border bg-card">
+    <article aria-label={meal.name} className="rounded-xl border bg-card">
       <div className="flex items-center justify-between gap-3 p-4">
         <div className="min-w-0">
           <p className="truncate font-medium">{meal.name}</p>
@@ -121,6 +121,6 @@ export function MealRow({
           </Button>
         </div>
       )}
-    </div>
+    </article>
   );
 }

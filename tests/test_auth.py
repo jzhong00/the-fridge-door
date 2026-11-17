@@ -448,3 +448,35 @@ def test_reads_are_not_refused(guest):
 def test_a_configured_origin_is_trusted(guest, monkeypatch):
     monkeypatch.setenv("MEAL_PLANNER_CORS_ORIGINS", "https://preview.example")
     assert _create(guest, origin="https://preview.example").status_code == 201
+
+
+# --- Sample meals for new guests ------------------------------------------------
+
+
+def test_a_guest_can_start_with_sample_meals_planned_in_their_week(anonymous):
+    # A Wednesday: the samples go in the week it falls in.
+    response = anonymous.post("/api/auth/guest", json={"sample_week": "2026-08-05"})
+    assert response.status_code == 201
+
+    meals = anonymous.get("/api/meals").json()
+    assert [m["name"] for m in meals] == [
+        "Spaghetti Bolognese",
+        "Tacos",
+        "Butter Chicken",
+    ]
+    assert all(m["ingredients"] for m in meals)
+
+    plan = anonymous.get("/api/plan/2026-08-03").json()["days"]
+    planned = {d["day"]: d["servings"] for d in plan if d["meal_id"] is not None}
+    assert planned == {"Monday": 4, "Tuesday": 2, "Thursday": 4, "Saturday": 2}
+    assert anonymous.get("/api/grocery-list/2026-08-03").json()
+
+
+def test_a_guest_who_asks_for_nothing_starts_empty(guest):
+    assert guest.get("/api/meals").json() == []
+
+
+def test_samples_keep_signing_up_meaningful(anonymous):
+    anonymous.post("/api/auth/guest", json={"sample_week": "2026-08-05"})
+    _sign_up(anonymous)
+    assert len(anonymous.get("/api/meals").json()) == 3

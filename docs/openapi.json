@@ -78,8 +78,25 @@
           "auth"
         ],
         "summary": "Start Guest",
-        "description": "Start a guest session: a real account with no email or password.\n\nThe app calls this when a request comes back 401, so a first visit\nlands straight in a working planner. A caller who is already signed in\ngets their own account back (200) rather than a second one.",
+        "description": "Start a guest session: a real account with no email or password.\n\nThe app calls this when a request comes back 401, so a first visit\nlands straight in a working planner, with sample meals if it asks for\nthem. A caller who is already signed in gets their own account back\n(200) rather than a second one.",
         "operationId": "start_guest_api_auth_guest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GuestStart"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Successful Response",
@@ -97,6 +114,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -1273,6 +1300,26 @@
         ],
         "title": "GroceryLine",
         "description": "One shopping line. qty stays numeric so clients can sort or price it."
+      },
+      "GuestStart": {
+        "properties": {
+          "sample_week": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Week"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GuestStart",
+        "description": "Optional: ask for sample meals, planned in the week containing this\ndate (the browser's own week, since the server cannot know its zone)."
       },
       "IngredientAdd": {
         "properties": {

@@ -250,3 +250,17 @@ def test_the_app_works_end_to_end_as_the_runtime_role(
         assert client.post("/api/auth/signup", json=signup).status_code == 200
         assert client.delete(f"/api/meals/{meal['id']}").status_code == 204
         assert client.post("/api/auth/logout").status_code == 204
+
+
+def test_a_guests_sample_meals_are_written_under_row_security(
+    runtime_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Guest creation declares the new user before writing their samples;
+    # without that, the policies would refuse every sample row.
+    monkeypatch.setenv("MEAL_PLANNER_DB_URL", runtime_url)
+    monkeypatch.setenv("MEAL_PLANNER_AUTO_MIGRATE", "false")
+
+    with api_client(as_guest=False) as client:
+        started = client.post("/api/auth/guest", json={"sample_week": "2026-08-05"})
+        assert started.status_code == 201, started.text
+        assert len(client.get("/api/meals").json()) == 3

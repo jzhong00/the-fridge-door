@@ -1,11 +1,13 @@
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
+import { AccountBar } from "@/components/AccountBar";
 import { GroceryTab } from "@/components/GroceryTab";
 import { MealsTab } from "@/components/meals/MealsTab";
 import { WeeklyPlanTab } from "@/components/WeeklyPlanTab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAccount } from "@/hooks/useAccount";
 import { usePlanner } from "@/hooks/usePlanner";
 import { addDays, formatWeekRange, mondayOf } from "@/lib/dates";
 import { useSearchParam } from "@/lib/searchParams";
@@ -25,11 +27,38 @@ function parseTab(raw: string | null): Tab {
 
 export default function App() {
   const planner = usePlanner();
+  const session = useAccount();
   // In the URL, so a refresh or a shared link opens the same tab.
   const [tab, setTab] = useSearchParam("tab", parseTab);
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-10 lg:px-10">
+      <div className="mb-6">
+        <AccountBar
+          account={session.account}
+          onSignUp={session.signUp}
+          onLogIn={session.logIn}
+          onLogOut={session.logOut}
+          loggingOut={session.loggingOut}
+        />
+      </div>
+
+      {session.notice && (
+        <div
+          role="status"
+          className="mb-6 flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-sm"
+        >
+          <span>{session.notice}</span>
+          <button
+            onClick={session.dismissNotice}
+            aria-label="Dismiss"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">

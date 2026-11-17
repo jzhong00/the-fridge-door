@@ -30,5 +30,7 @@ export type MealTemplate = Schemas["TemplateRead"];
 /** Everything needed to render one week, fetched in a single request. */
 export type AppState = Schemas["AppState"];
 export type WeekPlan = Schemas["WeekPlanRead"];
+/** Who is signed in: a guest (no email) or an account. */
+export type Account = Schemas["Account"];
 /** The body of every error response (RFC 9457). */
 export type Problem = Schemas["Problem"];
