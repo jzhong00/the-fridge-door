@@ -103,7 +103,19 @@ Tests: `web/src/hooks/usePlanner.test.ts`, `web/src/App.test.tsx`.
   later release) or an agreed maintenance window.
 - Dependencies update weekly through Dependabot, held back until a release
   is two weeks old.
-- One transaction per request, opened in `server/deps.py`.
+- One transaction per request, opened in `server/deps.py`, and
+  `Database.transaction()` is the only code that commits. Repositories are
+  handed a session and never open, commit or roll back one; every write
+  flushes before returning, so a constraint error comes from the method
+  that caused it. Sessions have autobegin off, so a statement outside the
+  transaction raises instead of opening a stray one. The dependency uses
+  `Depends(..., scope="function")` so the commit happens before the
+  response is sent: with the default scope a failed commit had already
+  answered 200.
+- Get-or-create is `INSERT ... ON CONFLICT DO NOTHING` then a lookup, never
+  "look, then insert": two requests creating the same row at once both
+  succeed instead of one hitting the unique index, which in Postgres also
+  aborts the rest of its transaction.
 - Queries are SQLAlchemy constructs, never string-built SQL.
 - Reads that need related rows use explicit joins; there are no ORM
   relationships to lazy-load.

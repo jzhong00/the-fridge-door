@@ -22,7 +22,6 @@ from app.repositories import (
 class Services:
     """Everything a route handler needs to read or change data."""
 
-    db: Database
     meals: MealRepository
     ingredients: IngredientRepository
     plans: WeeklyPlanRepository
@@ -41,31 +40,38 @@ def get_database() -> Database:
 
 
 def get_services() -> Generator[Services]:
-    """FastAPI dependency yielding the repositories for one request.
+    """FastAPI dependency: one transaction per request, and the repositories
+    that work inside it.
 
-    One session is opened here and shared by all three repositories, so a
-    request touching several of them costs one BEGIN/COMMIT rather than one
-    each. Against a database a network away that was ~1.5s of the 3.4s a
-    week change used to take.
+    Everything a request does commits together or not at all. A route that
+    raises (a domain error included) rolls back whatever it had written,
+    and one BEGIN/COMMIT per request rather than per repository saved about
+    1.5 s of a 3.4 s week change against a database a network away.
     """
-    db = get_database()
-    with db.session() as session:
+    with get_database().transaction() as session:
         # TEMPORARY (Phase 1, step 4 replaces it with the session's user):
         # every request acts as the account that owns the pre-accounts data,
         # so the app behaves as the single-user app it was until then.
-        user_id = UserRepository(db, session).unclaimed_owner_id()
+        user_id = UserRepository(session).unclaimed_owner_id()
         yield Services(
-            db=db,
-            meals=MealRepository(db, session, user_id=user_id),
-            ingredients=IngredientRepository(db, session, user_id=user_id),
-            plans=WeeklyPlanRepository(db, session, user_id=user_id),
+            meals=MealRepository(session, user_id=user_id),
+            ingredients=IngredientRepository(session, user_id=user_id),
+            plans=WeeklyPlanRepository(session, user_id=user_id),
         )
 
 
-#: What route handlers annotate their `services` parameter with. Annotated
-#: rather than a `Depends()` default, which FastAPI still accepts but which
-#: evaluates a call at import time and reads as a mutable default argument.
-ServicesDep = Annotated[Services, Depends(get_services)]
+#: What route handlers annotate their `services` parameter with.
+#:
+#: `scope="function"` makes the transaction commit when the route returns,
+#: before the response is sent. FastAPI's default scope finishes yield
+#: dependencies after the response has gone out, so a commit that failed
+#: there (a dropped connection, a constraint checked at commit) would
+#: already have told the client 200 for a write that never happened.
+#: tests/test_transactions.py proves the difference.
+#:
+#: Annotated rather than a `Depends()` default, which FastAPI still accepts
+#: but which evaluates a call at import time and reads as a mutable default.
+ServicesDep = Annotated[Services, Depends(get_services, scope="function")]
 
 
 def reset_services_cache() -> None:

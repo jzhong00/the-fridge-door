@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
+from per_request import PerRequest
 
 from app.db import Database
 from app.exceptions import MealNotFoundError
@@ -23,17 +24,17 @@ WEEK = date(2026, 8, 3)
 
 @pytest.fixture
 def their_meals(db: Database, other_user_id: int) -> MealRepository:
-    return MealRepository(db, user_id=other_user_id)
+    return PerRequest(db, lambda s: MealRepository(s, user_id=other_user_id))  # type: ignore[return-value]
 
 
 @pytest.fixture
 def their_plans(db: Database, other_user_id: int) -> WeeklyPlanRepository:
-    return WeeklyPlanRepository(db, user_id=other_user_id)
+    return PerRequest(db, lambda s: WeeklyPlanRepository(s, user_id=other_user_id))  # type: ignore[return-value]
 
 
 @pytest.fixture
 def their_ingredients(db: Database, other_user_id: int) -> IngredientRepository:
-    return IngredientRepository(db, user_id=other_user_id)
+    return PerRequest(db, lambda s: IngredientRepository(s, user_id=other_user_id))  # type: ignore[return-value]
 
 
 def test_each_person_sees_only_their_own_meals(meals, their_meals):

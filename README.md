@@ -27,8 +27,9 @@ web/ (React)  →  server/ (FastAPI)  →  app/ (domain)  →  Postgres / SQLite
 ```
 
 - **`app/`** owns the domain and knows nothing about HTTP. `Database` holds the
-  engine and yields transactional sessions; the repositories run each operation
-  inside one, so multi-step writes either land completely or roll back.
+  engine and opens transactions; the repositories work inside whichever one
+  they are handed and never commit, so each API request lands completely or
+  rolls back as a whole, and the commit finishes before the response is sent.
 - **`server/`** translates HTTP to repository calls and contains no SQL. Domain
   errors map to status codes and RFC 9457 problem responses, so messages
   written for users surface verbatim.
@@ -76,7 +77,7 @@ hit the API.
 ```
 meal-planner/
 ├── app/                  # Domain layer
-│   ├── db.py             #   Database: owns the engine, yields transactional sessions
+│   ├── db.py             #   Database: owns the engine, opens the one transaction per request
 │   ├── models.py         #   SQLModel tables + the DayOfWeek enum
 │   ├── repositories.py   #   Meal / Ingredient / WeeklyPlan repositories
 │   ├── planner.py        #   GroceryItem + weekly aggregation
