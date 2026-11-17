@@ -14,14 +14,28 @@ import type {
   WeekPlan,
 } from "./types";
 
-/** An error carrying the message the API wrote for the user. */
+/**
+ * An error carrying the message the API wrote for the user.
+ *
+ * Every API error is an RFC 9457 problem: `detail` becomes the message,
+ * `type` identifies the kind of failure for code that needs to branch on it,
+ * and `requestId` matches the server's log lines for that request.
+ */
 export class ApiError extends Error {
   readonly status: number;
+  readonly type: string | null;
+  readonly requestId: string | null;
 
-  constructor(status: number, message: string) {
+  constructor(
+    status: number,
+    message: string,
+    { type = null, requestId = null }: { type?: string | null; requestId?: string | null } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.type = type;
+    this.requestId = requestId;
   }
 }
 
@@ -32,7 +46,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new ApiError(response.status, await readErrorMessage(response));
+    throw await toApiError(response);
   }
 
   // 204 No Content has no body to parse.
@@ -43,25 +57,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /**
- * Pull a human-readable message out of a failed response.
+ * Build an ApiError from a failed response.
  *
- * Domain errors return {detail: "..."} written for the user. Validation
- * errors return FastAPI's array form, which is not, so those get a generic
- * message rather than leaking a field path into the UI.
+ * The API writes `detail` as a sentence for the user, so it is shown as is.
+ * Anything else in that field was written for developers and is replaced
+ * with a generic message rather than leaking a field path into the UI.
  */
-async function readErrorMessage(response: Response): Promise<string> {
+async function toApiError(response: Response): Promise<ApiError> {
+  const requestId = response.headers?.get("X-Request-ID") ?? null;
   try {
     const body = await response.json();
+    const type = typeof body?.type === "string" ? body.type : null;
     if (typeof body?.detail === "string") {
-      return body.detail;
+      return new ApiError(response.status, body.detail, { type, requestId });
     }
-    if (Array.isArray(body?.detail)) {
-      return "That doesn't look right — please check the values and try again.";
+    if (body?.detail !== undefined) {
+      return new ApiError(
+        response.status,
+        "That doesn't look right — please check the values and try again.",
+        { type, requestId },
+      );
     }
   } catch {
     // Body was not JSON; fall through to the status-based message.
   }
-  return `Request failed (${response.status}).`;
+  return new ApiError(response.status, `Request failed (${response.status}).`, {
+    requestId,
+  });
 }
 
 export const api = {

@@ -30,7 +30,8 @@ web/ (React)  →  server/ (FastAPI)  →  app/ (domain)  →  Postgres / SQLite
   engine and yields transactional sessions; the repositories run each operation
   inside one, so multi-step writes either land completely or roll back.
 - **`server/`** translates HTTP to repository calls and contains no SQL. Domain
-  errors map to status codes, so messages written for users surface verbatim.
+  errors map to status codes and RFC 9457 problem responses, so messages
+  written for users surface verbatim.
 - **`web/`** renders and holds state. It loads a week in a single request and
   works from memory afterwards. Built on shadcn/ui over Base UI primitives,
   so dialogs, selects and tabs are accessible without hand-rolling them.
@@ -81,11 +82,13 @@ meal-planner/
 │   ├── migrations.py     #   Applies Alembic migrations from Python
 │   └── exceptions.py     #   Domain errors carrying user-facing messages
 ├── server/               # FastAPI application
-│   ├── main.py           #   App setup, CORS, error mapping
+│   ├── main.py           #   App setup, CORS, middleware order
 │   ├── deps.py           #   Database and repository wiring
+│   ├── problems.py       #   RFC 9457 error responses
+│   ├── observability.py  #   Request ids and structured logs
 │   ├── schemas.py        #   Request/response models
 │   ├── serializers.py    #   Domain objects → response models
-│   └── routers/          #   meals, plans, state
+│   └── routers/          #   meals, plans, state, health
 ├── api/index.py          # Vercel serverless entry point
 ├── web/                  # React + TypeScript + Tailwind frontend
 │   └── src/
@@ -135,12 +138,19 @@ Two processes. The Vite dev server proxies `/api` to the backend, so the
 frontend uses the same relative URLs it will in production.
 
 ```bash
-uvicorn server.main:app --reload --port 8000   # terminal 1
+uvicorn server.main:app --reload --no-access-log --port 8000   # terminal 1
 cd web && npm run dev                          # terminal 2
 ```
 
 The frontend runs on `http://localhost:5173`. Interactive API docs are at
 `http://localhost:8000/docs`.
+
+## Conventions
+
+Errors are RFC 9457 Problem Details, request bodies reject unknown fields,
+every response carries an `X-Request-ID` that appears in every log line for
+that request, and `/health/ready` checks the database. The full set, and the
+test that enforces each, is in [docs/conventions.md](docs/conventions.md).
 
 ## Tests
 

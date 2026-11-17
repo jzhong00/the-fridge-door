@@ -63,6 +63,10 @@ class Database:
             # A pooler or network can drop an idle connection; check one is
             # alive rather than failing the first query after a quiet period.
             options["pool_pre_ping"] = True
+            # Bounded, so a readiness probe or a request against an
+            # unreachable database fails in seconds rather than hanging.
+            # Generous enough for a Neon compute waking from suspension.
+            options["connect_args"] = {"connect_timeout": 10}
 
         self._engine = create_engine(self.url, echo=echo, **options)
 

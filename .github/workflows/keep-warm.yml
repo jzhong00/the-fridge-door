@@ -20,32 +20,14 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install driver
-        run: pip install "psycopg[binary]==3.3.4"
-
-      - name: Ping
+      # The readiness check runs `select 1` through the deployed API, so one
+      # request keeps both the Neon compute and the serverless function warm,
+      # and this job needs no database credentials. APP_URL is a repository
+      # variable, defaulting to the production deployment.
+      - name: Ping /health/ready
         env:
-          MEAL_PLANNER_DB_URL: ${{ secrets.MEAL_PLANNER_DB_URL }}
+          APP_URL: ${{ vars.APP_URL || 'https://meal-planner-liard-ten.vercel.app' }}
         run: |
-          python - <<'PY'
-          import os, sys, time
-          import psycopg
-
-          url = os.environ.get("MEAL_PLANNER_DB_URL", "")
-          if not url:
-              sys.exit("MEAL_PLANNER_DB_URL secret is not set")
-
-          # psycopg does not understand SQLAlchemy's driver suffix.
-          url = url.replace("postgresql+psycopg://", "postgresql://")
-
-          start = time.perf_counter()
-          with psycopg.connect(url, connect_timeout=20) as conn:
-              conn.execute("select 1")
-          print(f"warm in {(time.perf_counter() - start) * 1000:.0f} ms")
-          PY
+          curl --fail-with-body --silent --show-error --max-time 30 \
+            --write-out '\nready in %{time_total}s\n' \
+            "$APP_URL/health/ready"

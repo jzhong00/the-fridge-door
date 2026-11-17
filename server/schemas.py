@@ -9,9 +9,17 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import DayOfWeek
+
+
+class RequestSchema(BaseModel):
+    """Base for every request body. Unknown fields are a 422 rather than
+    silently dropped, so a misspelt field fails loudly instead of being
+    replaced by its default."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class IngredientAmount(BaseModel):
@@ -32,7 +40,7 @@ class MealRead(BaseModel):
     ingredients: list[IngredientAmount] = Field(default_factory=list)
 
 
-class MealCreate(BaseModel):
+class MealCreate(RequestSchema):
     name: str = Field(min_length=1, max_length=200)
     servings: int = Field(default=1, ge=1)
 
@@ -49,7 +57,7 @@ class MealUpdate(MealCreate):
     """Same fields as creation; every one is required on update."""
 
 
-class IngredientAdd(BaseModel):
+class IngredientAdd(RequestSchema):
     name: str = Field(min_length=1, max_length=200)
     # Greater than zero: an ingredient with no amount cannot be shopped for.
     qty: float = Field(gt=0)
@@ -69,7 +77,7 @@ class IngredientAdd(BaseModel):
         return value.strip()
 
 
-class IngredientUpdate(BaseModel):
+class IngredientUpdate(RequestSchema):
     qty: float = Field(gt=0)
     unit: str = Field(default="", max_length=50)
 
@@ -84,8 +92,12 @@ class DayAssignment(BaseModel):
     servings: int | None = Field(default=None, ge=1)
 
 
-class WeekPlanWrite(BaseModel):
-    days: list[DayAssignment]
+class DayAssignmentWrite(DayAssignment, RequestSchema):
+    """A day as a client sends it: the same fields, but strict."""
+
+
+class WeekPlanWrite(RequestSchema):
+    days: list[DayAssignmentWrite]
 
 
 class WeekPlanRead(BaseModel):

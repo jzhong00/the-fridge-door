@@ -37,9 +37,31 @@ describe("error handling", () => {
     });
   });
 
-  it("does not leak FastAPI's validation array into the UI", async () => {
-    // FastAPI returns detail as an array of field errors, which is written
-    // for developers, not for the person using the app.
+  it("reads an RFC 9457 problem: detail, type and request id", async () => {
+    mockFetch({
+      ok: false,
+      status: 422,
+      headers: new Headers({ "X-Request-ID": "3f2b-req" }),
+      json: async () => ({
+        type: "urn:meal-planner:problem:request-validation",
+        title: "Request validation failed",
+        status: 422,
+        detail: "Some of those values aren't valid. Check them and try again.",
+        instance: "/api/meals",
+        invalid_params: [{ name: "body.servings", reason: "greater than 0" }],
+      }),
+    });
+
+    await expect(api.createMeal("X", 1)).rejects.toMatchObject({
+      message: "Some of those values aren't valid. Check them and try again.",
+      type: "urn:meal-planner:problem:request-validation",
+      requestId: "3f2b-req",
+    });
+  });
+
+  it("never shows a detail that is not a sentence", async () => {
+    // Anything but a string was written for developers, not for the person
+    // using the app, so it is replaced rather than rendered.
     mockFetch({
       ok: false,
       status: 422,
