@@ -10,21 +10,23 @@ Asking for another user's row behaves exactly like asking for a row that
 does not exist, so the API answers 404 either way and never confirms that
 someone else's id is real.
 
-Each repository takes a :class:`~app.db.Database` and runs every method in
-one transaction, so multi-step writes either land completely or not at all.
-Passing a session instead runs several repositories in one transaction.
+Repositories never open, commit or roll back a transaction. They are handed
+a session already inside one (`Database.transaction()`), and whoever opened
+it decides the outcome: for the API, one transaction per request, so
+everything a request does lands together or not at all. Sessions are made
+with autobegin off, so a statement outside that transaction raises instead
+of silently starting one that nobody commits.
 """
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, nullcontext
 from datetime import date
 
 from sqlalchemy import delete, func, insert, update
 from sqlalchemy import select as sa_select
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlmodel import Session, col, select
 
-from app.db import Database
 from app.exceptions import (
     DuplicateNameError,
     IngredientNotOnMealError,
@@ -53,30 +55,20 @@ def _as_day(day: DayOfWeek | str) -> str:
 
 
 class _Repository:
-    """Common session handling and the user every query is scoped to.
+    """The session to work in and the user every query is scoped to.
 
-    Each method opens a session, which normally means one transaction per
-    call. A caller that wants several calls in one transaction passes the
-    session in, and every method here joins it instead - one BEGIN/COMMIT
-    per request rather than one per repository touched.
+    Every write flushes before returning, so a constraint violation is
+    raised by the method that caused it rather than later, at commit, where
+    it could no longer be told apart from any other failure.
     """
 
-    def __init__(
-        self, db: Database, session: Session | None = None, *, user_id: int
-    ) -> None:
-        self._db = db
-        self._session_override = session
+    def __init__(self, session: Session, *, user_id: int) -> None:
+        self._session = session
         self._user_id = user_id
 
     @property
     def user_id(self) -> int:
         return self._user_id
-
-    def _session(self) -> AbstractContextManager[Session]:
-        if self._session_override is not None:
-            # Not ours to commit or close; the owner does both.
-            return nullcontext(self._session_override)
-        return self._db.session()
 
 
 class IngredientRepository(_Repository):
@@ -84,12 +76,11 @@ class IngredientRepository(_Repository):
 
     def list_all(self) -> list[Ingredient]:
         """Every ingredient this user has used, for the autocomplete."""
-        with self._session() as session:
-            return list(
-                session.exec(
-                    select(Ingredient).where(Ingredient.user_id == self._user_id)
-                ).all()
-            )
+        return list(
+            self._session.exec(
+                select(Ingredient).where(Ingredient.user_id == self._user_id)
+            ).all()
+        )
 
 
 class MealRepository(_Repository):
@@ -104,35 +95,24 @@ class MealRepository(_Repository):
         any order, and the per-user name index made SQLite return them
         alphabetically, reshuffling the list on screen.
         """
-        with self._session() as session:
-            return list(
-                session.exec(
-                    select(Meal)
-                    .where(Meal.user_id == self._user_id)
-                    .order_by(col(Meal.id))
-                ).all()
-            )
+        return list(
+            self._session.exec(
+                select(Meal).where(Meal.user_id == self._user_id).order_by(col(Meal.id))
+            ).all()
+        )
 
     def list_all_with_ingredients(
         self,
     ) -> list[tuple[Meal, list[tuple[MealIngredient, Ingredient]]]]:
         """Every meal with its ingredients, in two queries rather than one
         per meal - which would be a network round trip each in deployment."""
-        with self._session() as session:
-            meals = list(
-                session.exec(
-                    select(Meal)
-                    .where(Meal.user_id == self._user_id)
-                    .order_by(col(Meal.id))
-                ).all()
-            )
-
-            rows = session.exec(
-                select(MealIngredient, Ingredient)
-                .join(Ingredient, col(Ingredient.id) == MealIngredient.ingredient_id)
-                .join(Meal, col(Meal.id) == MealIngredient.meal_id)
-                .where(Meal.user_id == self._user_id)
-            ).all()
+        meals = self.list_all()
+        rows = self._session.exec(
+            select(MealIngredient, Ingredient)
+            .join(Ingredient, col(Ingredient.id) == MealIngredient.ingredient_id)
+            .join(Meal, col(Meal.id) == MealIngredient.meal_id)
+            .where(Meal.user_id == self._user_id)
+        ).all()
 
         by_meal: dict[int | None, list[tuple[MealIngredient, Ingredient]]] = {}
         for link, ingredient in rows:
@@ -144,46 +124,39 @@ class MealRepository(_Repository):
         self, meal_id: int
     ) -> tuple[Meal, list[tuple[MealIngredient, Ingredient]]]:
         """One meal and its ingredients. Raises MealNotFoundError."""
-        with self._session() as session:
-            meal = self._get_or_raise(session, meal_id)
-            return meal, self._ingredients_of(session, meal_id)
+        meal = self._get_or_raise(meal_id)
+        return meal, self._ingredients_of(meal_id)
 
     def add(self, name: str, servings: int = 1) -> Meal:
         """Create a meal. Raises DuplicateNameError if the name is taken."""
-        with self._session() as session:
-            self._assert_name_available(session, name)
-            meal = Meal(user_id=self._user_id, name=name, servings=servings)
-            session.add(meal)
-            session.flush()
-            return meal
+        self._assert_name_available(name)
+        meal = Meal(user_id=self._user_id, name=name, servings=servings)
+        self._session.add(meal)
+        self._session.flush()
+        return meal
 
     def add_from_template(self, template: MealTemplate) -> Meal:
-        """Create a meal and its template ingredients in one transaction."""
-        with self._session() as session:
-            self._assert_name_available(session, template.name)
-            meal = Meal(
-                user_id=self._user_id, name=template.name, servings=template.servings
-            )
-            session.add(meal)
-            session.flush()
+        """Create a meal and its template ingredients.
 
-            for item in template.ingredients:
-                self._attach_ingredient(
-                    session, persisted_id(meal), item.name, item.qty, item.unit
-                )
-            return meal
+        If an ingredient fails part-way, the error leaves the meal half-built
+        inside the caller's transaction, and the caller's rollback removes it.
+        """
+        meal = self.add(template.name, template.servings)
+        for item in template.ingredients:
+            self._attach_ingredient(persisted_id(meal), item.name, item.qty, item.unit)
+        return meal
 
     def update(self, meal_id: int, name: str, servings: int) -> None:
         """Rename a meal or change its serving size.
 
         Raises MealNotFoundError, or DuplicateNameError if the name is taken.
         """
-        with self._session() as session:
-            meal = self._get_or_raise(session, meal_id)
-            if name.lower() != meal.name.lower():
-                self._assert_name_available(session, name, exclude_id=meal_id)
-            meal.name = name
-            meal.servings = servings
+        meal = self._get_or_raise(meal_id)
+        if name.lower() != meal.name.lower():
+            self._assert_name_available(name, exclude_id=meal_id)
+        meal.name = name
+        meal.servings = servings
+        self._session.flush()
 
     def delete(self, meal_id: int) -> None:
         """Delete a meal. Raises MealNotFoundError.
@@ -195,31 +168,29 @@ class MealRepository(_Repository):
         clears both itself; the key remains the guarantee for any other
         writer.)
         """
-        with self._session() as session:
-            self._get_or_raise(session, meal_id)
-            session.execute(
-                update(WeeklyPlan)
-                .where(
-                    col(WeeklyPlan.user_id) == self._user_id,
-                    col(WeeklyPlan.meal_id) == meal_id,
-                )
-                .values(meal_id=None, servings=None)
+        self._get_or_raise(meal_id)
+        self._session.execute(
+            update(WeeklyPlan)
+            .where(
+                col(WeeklyPlan.user_id) == self._user_id,
+                col(WeeklyPlan.meal_id) == meal_id,
             )
-            session.execute(
-                delete(Meal).where(
-                    col(Meal.id) == meal_id, col(Meal.user_id) == self._user_id
-                )
+            .values(meal_id=None, servings=None)
+        )
+        self._session.execute(
+            delete(Meal).where(
+                col(Meal.id) == meal_id, col(Meal.user_id) == self._user_id
             )
+        )
 
     # ------------------------------------------------------- ingredients
 
     def list_ingredients(self, meal_id: int) -> list[tuple[MealIngredient, Ingredient]]:
         """The (amount, ingredient) pairs attached to one of this user's meals.
         Empty for a meal that is not theirs."""
-        with self._session() as session:
-            if self._find_meal(session, meal_id) is None:
-                return []
-            return self._ingredients_of(session, meal_id)
+        if self._find_meal(meal_id) is None:
+            return []
+        return self._ingredients_of(meal_id)
 
     def add_ingredient(
         self, meal_id: int, ingredient_name: str, qty: float, unit: str
@@ -230,9 +201,8 @@ class MealRepository(_Repository):
         UnitMismatchError if the meal already uses a different unit, and
         MealNotFoundError if the meal does not exist or is not this user's.
         """
-        with self._session() as session:
-            self._get_or_raise(session, meal_id)
-            self._attach_ingredient(session, meal_id, ingredient_name, qty, unit)
+        self._get_or_raise(meal_id)
+        self._attach_ingredient(meal_id, ingredient_name, qty, unit)
 
     def update_ingredient(
         self, meal_id: int, ingredient_id: int, qty: float, unit: str
@@ -242,40 +212,37 @@ class MealRepository(_Repository):
         Raises IngredientNotOnMealError if it is not attached. Returning
         quietly instead would answer 200 to a request that changed nothing.
         """
-        with self._session() as session:
-            link = self._require_link(session, meal_id, ingredient_id)
-            link.qty = qty
-            link.unit = unit
+        link = self._require_link(meal_id, ingredient_id)
+        link.qty = qty
+        link.unit = unit
+        self._session.flush()
 
     def remove_ingredient(self, meal_id: int, ingredient_id: int) -> None:
         """Detach an ingredient from a meal, leaving the ingredient itself.
 
         Raises IngredientNotOnMealError if it is not attached.
         """
-        with self._session() as session:
-            session.delete(self._require_link(session, meal_id, ingredient_id))
+        self._session.delete(self._require_link(meal_id, ingredient_id))
+        self._session.flush()
 
     # ----------------------------------------------------------- helpers
 
-    def _find_meal(self, session: Session, meal_id: int) -> Meal | None:
-        meal = session.get(Meal, meal_id)
+    def _find_meal(self, meal_id: int) -> Meal | None:
+        meal = self._session.get(Meal, meal_id)
         # Someone else's meal is indistinguishable from no meal at all.
         if meal is None or meal.user_id != self._user_id:
             return None
         return meal
 
-    def _get_or_raise(self, session: Session, meal_id: int) -> Meal:
-        meal = self._find_meal(session, meal_id)
+    def _get_or_raise(self, meal_id: int) -> Meal:
+        meal = self._find_meal(meal_id)
         if meal is None:
             raise MealNotFoundError(f"No meal with id {meal_id}.")
         return meal
 
-    @staticmethod
-    def _ingredients_of(
-        session: Session, meal_id: int
-    ) -> list[tuple[MealIngredient, Ingredient]]:
+    def _ingredients_of(self, meal_id: int) -> list[tuple[MealIngredient, Ingredient]]:
         return list(
-            session.exec(
+            self._session.exec(
                 select(MealIngredient, Ingredient)
                 .where(MealIngredient.meal_id == meal_id)
                 .where(MealIngredient.ingredient_id == Ingredient.id)
@@ -283,67 +250,83 @@ class MealRepository(_Repository):
         )
 
     def _assert_name_available(
-        self, session: Session, name: str, *, exclude_id: int | None = None
+        self, name: str, *, exclude_id: int | None = None
     ) -> None:
         statement = select(Meal).where(
             Meal.user_id == self._user_id, func.lower(Meal.name) == name.lower()
         )
         if exclude_id is not None:
             statement = statement.where(Meal.id != exclude_id)
-        existing = session.exec(statement).first()
+        existing = self._session.exec(statement).first()
         if existing:
             raise DuplicateNameError(f"A meal named '{existing.name}' already exists.")
 
-    @staticmethod
-    def _find_link(
-        session: Session, meal_id: int, ingredient_id: int
-    ) -> MealIngredient | None:
-        return session.exec(
+    def _find_link(self, meal_id: int, ingredient_id: int) -> MealIngredient | None:
+        return self._session.exec(
             select(MealIngredient).where(
                 MealIngredient.meal_id == meal_id,
                 MealIngredient.ingredient_id == ingredient_id,
             )
         ).first()
 
-    def _require_link(
-        self, session: Session, meal_id: int, ingredient_id: int
-    ) -> MealIngredient:
+    def _require_link(self, meal_id: int, ingredient_id: int) -> MealIngredient:
         """The link, or a domain error naming which half is missing."""
-        self._get_or_raise(session, meal_id)
-        link = self._find_link(session, meal_id, ingredient_id)
+        self._get_or_raise(meal_id)
+        link = self._find_link(meal_id, ingredient_id)
         if link is None:
             raise IngredientNotOnMealError(
                 f"Ingredient {ingredient_id} is not on meal {meal_id}."
             )
         return link
 
-    def _find_ingredient_by_name(
-        self, session: Session, name: str
-    ) -> Ingredient | None:
+    def _find_ingredient_by_name(self, name: str) -> Ingredient | None:
         """This user's ingredient of that name, ignoring case, so "Eggs" and
         "eggs" are one item."""
-        return session.exec(
+        return self._session.exec(
             select(Ingredient).where(
                 Ingredient.user_id == self._user_id,
                 func.lower(Ingredient.name) == name.lower(),
             )
         ).first()
 
-    def _attach_ingredient(
-        self, session: Session, meal_id: int, name: str, qty: float, unit: str
-    ) -> None:
-        """Takes the caller's session so the operation stays in one
-        transaction rather than opening a nested one."""
-        ingredient = self._find_ingredient_by_name(session, name)
-        if ingredient is None:
-            ingredient = Ingredient(user_id=self._user_id, name=name)
-            session.add(ingredient)
-            session.flush()
+    def _get_or_create_ingredient(self, name: str) -> Ingredient:
+        """This user's ingredient of that name, created if it is new.
 
-        ingredient_id = persisted_id(ingredient)
-        link = self._find_link(session, meal_id, ingredient_id)
+        Safe when two requests add the same new ingredient at once. A plain
+        "look it up, insert it if missing" lets both see nothing and both
+        insert; the unique index then rejects the second, and in Postgres
+        that error poisons the rest of the transaction, so the whole request
+        fails. `INSERT ... ON CONFLICT DO NOTHING` instead waits for the
+        other insert, sees its row, and does nothing, and the lookup after it
+        finds that row. The first lookup is only a shortcut: the ingredient
+        usually exists already, and then one statement is enough.
+        """
+        existing = self._find_ingredient_by_name(name)
+        if existing is not None:
+            return existing
+
+        dialect = self._session.get_bind().dialect.name
+        upsert = postgresql.insert if dialect == "postgresql" else sqlite.insert
+        self._session.execute(
+            upsert(Ingredient)
+            .values(user_id=self._user_id, name=name)
+            .on_conflict_do_nothing(
+                # The unique index `uq_ingredients_user_id_lower_name`.
+                index_elements=[col(Ingredient.user_id), func.lower(Ingredient.name)]
+            )
+        )
+        created = self._find_ingredient_by_name(name)
+        if created is None:  # pragma: no cover - the insert or the conflict made it
+            raise RuntimeError(f"Ingredient {name!r} vanished after its insert.")
+        return created
+
+    def _attach_ingredient(
+        self, meal_id: int, name: str, qty: float, unit: str
+    ) -> None:
+        ingredient_id = persisted_id(self._get_or_create_ingredient(name))
+        link = self._find_link(meal_id, ingredient_id)
         if link is None:
-            session.add(
+            self._session.add(
                 MealIngredient(
                     meal_id=meal_id,
                     ingredient_id=ingredient_id,
@@ -351,6 +334,7 @@ class MealRepository(_Repository):
                     unit=unit,
                 )
             )
+            self._session.flush()
             return
 
         if link.unit != unit:
@@ -359,6 +343,7 @@ class MealRepository(_Repository):
                 f"Use the same unit to add more, or remove the existing entry first."
             )
         link.qty = link.qty + qty
+        self._session.flush()
 
 
 class WeeklyPlanRepository(_Repository):
@@ -366,12 +351,11 @@ class WeeklyPlanRepository(_Repository):
 
     def get_week(self, week_start_date: date) -> list[WeeklyPlan]:
         """Every stored day for one week. Days never set are absent."""
-        with self._session() as session:
-            statement = select(WeeklyPlan).where(
-                WeeklyPlan.user_id == self._user_id,
-                WeeklyPlan.week_start_date == week_start_date,
-            )
-            return list(session.exec(statement).all())
+        statement = select(WeeklyPlan).where(
+            WeeklyPlan.user_id == self._user_id,
+            WeeklyPlan.week_start_date == week_start_date,
+        )
+        return list(self._session.exec(statement).all())
 
     def set_day(
         self,
@@ -388,7 +372,7 @@ class WeeklyPlanRepository(_Repository):
         week_start_date: date,
         assignments: dict[DayOfWeek | str, tuple[int | None, int | None]],
     ) -> None:
-        """Assign several days of one week in a single transaction.
+        """Assign several days of one week at once.
 
         `assignments` maps day -> (meal_id, servings); a None meal_id clears
         the day. A day at a time meant 14 statements and several seconds
@@ -402,47 +386,45 @@ class WeeklyPlanRepository(_Repository):
         wanted = {_as_day(day): value for day, value in assignments.items()}
         meal_ids = {meal_id for meal_id, _ in wanted.values() if meal_id is not None}
 
-        with self._session() as session:
-            # Only this user's meals. The foreign key would accept anyone's,
-            # since a key check does not know who owns the row it points at.
-            if meal_ids:
-                found = set(
-                    session.exec(
-                        select(Meal.id).where(
-                            col(Meal.id).in_(meal_ids), Meal.user_id == self._user_id
-                        )
+        # Only this user's meals. The foreign key would accept anyone's,
+        # since a key check does not know who owns the row it points at.
+        if meal_ids:
+            found = set(
+                self._session.exec(
+                    select(Meal.id).where(
+                        col(Meal.id).in_(meal_ids), Meal.user_id == self._user_id
                     )
                 )
-                missing = sorted(meal_ids - found)
-                if missing:
-                    raise MealNotFoundError(f"No meal with id {missing[0]}.")
+            )
+            missing = sorted(meal_ids - found)
+            if missing:
+                raise MealNotFoundError(f"No meal with id {missing[0]}.")
 
-            # Replace rather than read-then-update: eight round trips for
-            # a week becomes two. Row ids are referenced nowhere. Cleared
-            # days keep a row with a NULL meal_id, distinguishing them from
-            # days never set.
-            session.execute(
-                delete(WeeklyPlan).where(
-                    col(WeeklyPlan.user_id) == self._user_id,
-                    col(WeeklyPlan.week_start_date) == week_start_date,
-                    col(WeeklyPlan.day_of_week).in_(wanted),
-                )
+        # Replace rather than read-then-update: eight round trips for a week
+        # becomes two. Row ids are referenced nowhere. Cleared days keep a
+        # row with a NULL meal_id, distinguishing them from days never set.
+        self._session.execute(
+            delete(WeeklyPlan).where(
+                col(WeeklyPlan.user_id) == self._user_id,
+                col(WeeklyPlan.week_start_date) == week_start_date,
+                col(WeeklyPlan.day_of_week).in_(wanted),
             )
-            # A Core insert becomes one executemany; adding ORM objects
-            # would emit an INSERT per row to read back ids nothing uses.
-            session.execute(
-                insert(WeeklyPlan),
-                [
-                    {
-                        "user_id": self._user_id,
-                        "week_start_date": week_start_date,
-                        "day_of_week": day,
-                        "meal_id": meal_id,
-                        "servings": servings,
-                    }
-                    for day, (meal_id, servings) in wanted.items()
-                ],
-            )
+        )
+        # A Core insert becomes one executemany; adding ORM objects would
+        # emit an INSERT per row to read back ids nothing uses.
+        self._session.execute(
+            insert(WeeklyPlan),
+            [
+                {
+                    "user_id": self._user_id,
+                    "week_start_date": week_start_date,
+                    "day_of_week": day,
+                    "meal_id": meal_id,
+                    "servings": servings,
+                }
+                for day, (meal_id, servings) in wanted.items()
+            ],
+        )
 
     def ingredient_rows_for_week(
         self, week_start_date: date
@@ -473,72 +455,50 @@ class WeeklyPlanRepository(_Repository):
                 col(WeeklyPlan.week_start_date) == week_start_date,
             )
         )
-        with self._session() as session:
-            return list(session.execute(statement).tuples().all())
+        return list(self._session.execute(statement).tuples().all())
 
     def copy_week(self, source_week: date, target_week: date) -> int:
         """Copy assigned days from one week onto another, returning the count.
 
         Unassigned source days are skipped rather than clearing the target.
         """
+        source_plans = self.get_week(source_week)
+        existing = {plan.day_of_week: plan for plan in self.get_week(target_week)}
+
         copied = 0
-        with self._session() as session:
-            source_plans = session.exec(
-                select(WeeklyPlan).where(
-                    WeeklyPlan.user_id == self._user_id,
-                    WeeklyPlan.week_start_date == source_week,
+        for source in source_plans:
+            if source.meal_id is None:
+                continue
+            target = existing.get(source.day_of_week)
+            if target:
+                target.meal_id = source.meal_id
+                target.servings = source.servings
+            else:
+                self._session.add(
+                    WeeklyPlan(
+                        user_id=self._user_id,
+                        week_start_date=target_week,
+                        day_of_week=source.day_of_week,
+                        meal_id=source.meal_id,
+                        servings=source.servings,
+                    )
                 )
-            ).all()
-
-            existing = {
-                plan.day_of_week: plan
-                for plan in session.exec(
-                    select(WeeklyPlan).where(
-                        WeeklyPlan.user_id == self._user_id,
-                        WeeklyPlan.week_start_date == target_week,
-                    )
-                ).all()
-            }
-
-            for source in source_plans:
-                if source.meal_id is None:
-                    continue
-                target = existing.get(source.day_of_week)
-                if target:
-                    target.meal_id = source.meal_id
-                    target.servings = source.servings
-                else:
-                    session.add(
-                        WeeklyPlan(
-                            user_id=self._user_id,
-                            week_start_date=target_week,
-                            day_of_week=source.day_of_week,
-                            meal_id=source.meal_id,
-                            servings=source.servings,
-                        )
-                    )
-                copied += 1
+            copied += 1
+        self._session.flush()
         return copied
 
 
 class UserRepository:
     """Accounts. Not bound to a user, since its job is to find one."""
 
-    def __init__(self, db: Database, session: Session | None = None) -> None:
-        self._db = db
-        self._session_override = session
-
-    def _session(self) -> AbstractContextManager[Session]:
-        if self._session_override is not None:
-            return nullcontext(self._session_override)
-        return self._db.session()
+    def __init__(self, session: Session) -> None:
+        self._session = session
 
     def create(self, *, is_guest: bool = True) -> User:
-        with self._session() as session:
-            user = User(is_guest=is_guest)
-            session.add(user)
-            session.flush()
-            return user
+        user = User(is_guest=is_guest)
+        self._session.add(user)
+        self._session.flush()
+        return user
 
     def unclaimed_owner_id(self) -> int:
         """The account that owns the data from before accounts existed,
@@ -548,17 +508,14 @@ class UserRepository:
         request acts as this account, so the app behaves exactly as the
         single-user app it was. It is removed when requests carry a session.
         """
-        with self._session() as session:
-            owner = session.exec(
-                select(User)
-                .where(
-                    col(User.is_guest).is_(False),
-                    col(User.email).is_(None),
-                )
-                .order_by(col(User.id))
-            ).first()
-            if owner is None:
-                owner = User(is_guest=False)
-                session.add(owner)
-                session.flush()
-            return persisted_id(owner)
+        owner = self._session.exec(
+            select(User)
+            .where(
+                col(User.is_guest).is_(False),
+                col(User.email).is_(None),
+            )
+            .order_by(col(User.id))
+        ).first()
+        if owner is None:
+            owner = self.create(is_guest=False)
+        return persisted_id(owner)

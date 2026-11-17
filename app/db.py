@@ -122,16 +122,20 @@ class Database:
         SQLModel.metadata.create_all(self._engine)
 
     @contextmanager
-    def session(self) -> Generator[Session]:
-        """Yield a session that commits on success and rolls back on error."""
-        # expire_on_commit=False keeps attributes readable after close, so
-        # repositories can return ORM objects to callers with no session.
-        session = Session(self._engine, expire_on_commit=False)
-        try:
+    def transaction(self) -> Generator[Session]:
+        """One transaction: committed if the block completes, rolled back if
+        it raises. The only place in the application that commits.
+
+        The session is made with autobegin off, so it can do nothing outside
+        this block. With autobegin on, a query after the commit (a stray read
+        in a response, a lazy load) would quietly open a second transaction
+        that nothing commits, or rolls back, or closes. Off, it raises.
+
+        expire_on_commit=False keeps loaded attributes readable after the
+        block, so a route can return the objects it read or wrote.
+        """
+        with (
+            Session(self._engine, expire_on_commit=False, autobegin=False) as session,
+            session.begin(),
+        ):
             yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()

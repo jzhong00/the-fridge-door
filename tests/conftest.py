@@ -16,10 +16,12 @@ import os
 
 import pytest
 from database_safety import assert_disposable, check_test_database_settings
+from per_request import PerRequest
 from sqlmodel import SQLModel
 
 from app.db import DATABASE_URL_ENV_VAR, Database
 from app.migrations import stamp_head
+from app.models import persisted_id
 from app.repositories import (
     IngredientRepository,
     MealRepository,
@@ -73,28 +75,37 @@ def db(tmp_path, monkeypatch) -> Database:
     reset_services_cache()
 
 
+def _new_account(db: Database) -> int:
+    with db.transaction() as session:
+        return persisted_id(UserRepository(session).create(is_guest=False))
+
+
 @pytest.fixture
 def user_id(db: Database) -> int:
     """The account the repository fixtures act as."""
-    return UserRepository(db).create(is_guest=False).id or 0
+    return _new_account(db)
 
 
 @pytest.fixture
 def other_user_id(db: Database) -> int:
     """A second account, for proving one cannot see the other's data."""
-    return UserRepository(db).create(is_guest=False).id or 0
+    return _new_account(db)
+
+
+# Each call on these runs in its own transaction, as one API request would
+# (see per_request.py).
 
 
 @pytest.fixture
 def meals(db: Database, user_id: int) -> MealRepository:
-    return MealRepository(db, user_id=user_id)
+    return PerRequest(db, lambda s: MealRepository(s, user_id=user_id))  # type: ignore[return-value]
 
 
 @pytest.fixture
 def ingredients(db: Database, user_id: int) -> IngredientRepository:
-    return IngredientRepository(db, user_id=user_id)
+    return PerRequest(db, lambda s: IngredientRepository(s, user_id=user_id))  # type: ignore[return-value]
 
 
 @pytest.fixture
 def plans(db: Database, user_id: int) -> WeeklyPlanRepository:
-    return WeeklyPlanRepository(db, user_id=user_id)
+    return PerRequest(db, lambda s: WeeklyPlanRepository(s, user_id=user_id))  # type: ignore[return-value]
