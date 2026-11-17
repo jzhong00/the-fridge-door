@@ -104,13 +104,38 @@ failed on SQLite whenever the ingredients went first. `NO ACTION` is
 checked at the end of the statement, by which time the meal lines are gone
 as well. A test deletes a user with a full set of data to prove it.
 
-## What the database does not enforce
+## Row-level security (Postgres)
+
+The web app connects as `meal_planner_app`, a role with no superuser or
+`BYPASSRLS` attribute that can read and write rows but not change the schema.
+At the start of each request the app declares whose request it is with
+`set_config('app.user_id', <id>, true)`, which lasts only until the
+transaction ends. Four tables carry a policy that compares each row with
+`current_app_user_id()`:
+
+| Table | A row is visible and writable when |
+|---|---|
+| `meals`, `ingredients` | `user_id` is the declared user |
+| `weekly_plans` | `user_id` is the declared user, and any `meal_id` is one of their meals |
+| `meal_ingredients` | its meal is theirs, and (on write) its ingredient is too |
+
+So a query that forgot its `WHERE user_id = ...` still returns only one
+person's rows, and a request that never declared a user sees nothing at
+all. `users` and `sessions` have no policy, because signing in must find a
+session or an email before anyone is known; only `app/auth.py` reads them.
+The owner role, used by migrations and scheduled jobs, is not subject to
+the policies (they are enabled, not forced), because that work spans users.
+`tests/test_rls.py` proves all of this connected as `meal_planner_app`, to a
+schema built by the migrations.
+
+## Ownership of what a row points at
 
 A plan's `meal_id` must belong to the same person as the plan, and a meal's
 ingredients must belong to the same person as the meal. A foreign key checks
-only that the row exists, not who owns it. Enforcing ownership in the
-database would need composite foreign keys such as `(user_id, meal_id)`, and
-`ON DELETE SET NULL` on one of those would also null `user_id` unless the
-database supports a column list (Postgres 15+; SQLite does not). So the
-repositories check ownership on every write, tests prove it, and row-level
-security in Postgres (Phase 1) enforces it again for reads and writes.
+only that the row exists, not who owns it. Composite foreign keys such as
+`(user_id, meal_id)` would enforce it, but `ON DELETE SET NULL` on one of
+those would also null `user_id` unless the database supports a column list
+(Postgres 15+; SQLite does not). Instead it is checked twice: the
+repositories check ownership on every write, and in Postgres the row-level
+security policies above refuse the write too. On SQLite, used for local
+development and tests, only the first check exists.

@@ -67,6 +67,31 @@ def main() -> int:
                 text("SELECT count(*) FROM users WHERE NOT is_guest AND email IS NULL")
             ).scalar()
             print(f"  unclaimed owner accounts: {owners}")
+        if engine.dialect.name == "postgresql":
+            role = connection.execute(
+                text(
+                    "SELECT rolcanlogin, rolsuper OR rolbypassrls FROM pg_roles "
+                    "WHERE rolname = 'meal_planner_app'"
+                )
+            ).first()
+            if role is None:
+                print("runtime role: (not created yet)")
+            else:
+                can_login, bypasses = role
+                login = "can log in" if can_login else "no login yet"
+                security = (
+                    "BYPASSES row security (fix this)"
+                    if bypasses
+                    else "subject to row security"
+                )
+                print(f"runtime role: meal_planner_app, {login}, {security}")
+            secured = connection.execute(
+                text(
+                    "SELECT string_agg(relname, ', ' ORDER BY relname) FROM pg_class "
+                    "WHERE relrowsecurity AND relnamespace = 'public'::regnamespace"
+                )
+            ).scalar()
+            print(f"row security on: {secured or '(none)'}")
     return 0
 
 

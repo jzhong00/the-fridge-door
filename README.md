@@ -62,8 +62,15 @@ unscoped, and someone else's meal answers 404, never 403.
   unknown or the password is wrong.
 - **Cross-site requests:** besides `SameSite=Strict`, any write whose
   `Origin` (or `Sec-Fetch-Site`) says another website sent it is refused.
+- **Row-level security:** in Postgres, the app connects as a role that can
+  only see and write rows belonging to the user its request declared.
+  Repositories filter by user, and the database filters again, so a query
+  that forgot its filter still returns nothing of anyone else's.
+  ([database-schema.md](docs/database-schema.md#row-level-security-postgres))
 - **Tests:** every API route is checked, from the OpenAPI document, to
-  answer 401 without a session, so a new route cannot ship open.
+  answer 401 without a session, so a new route cannot ship open. The row
+  security tests run connected as the app's own role, against a schema
+  built by the migrations.
 
 ### Latency
 
