@@ -37,7 +37,12 @@ export default defineConfig({
       command: `mkdir -p "$(dirname "${database}")" && rm -f "${database}" && python3 -m uvicorn server.main:app --port ${API_PORT} --no-access-log`,
       cwd: repoRoot,
       url: `http://127.0.0.1:${API_PORT}/health/ready`,
-      env: { MEAL_PLANNER_DB_URL: `sqlite:///${database}` },
+      env: {
+        MEAL_PLANNER_DB_URL: `sqlite:///${database}`,
+        // The preview server's proxy rewrites Host, so the page's Origin has
+        // to be named as trusted for writes to pass the cross-site check.
+        MEAL_PLANNER_CORS_ORIGINS: `http://127.0.0.1:${WEB_PORT}`,
+      },
       reuseExistingServer: false,
       timeout: 60_000,
     },

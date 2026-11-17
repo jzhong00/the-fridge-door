@@ -129,3 +129,100 @@ describe("ApiError", () => {
     expect(error.message).toBe("missing");
   });
 });
+
+describe("signed-out requests", () => {
+  const notSignedIn = {
+    ok: false,
+    status: 401,
+    json: async () => ({
+      type: "urn:meal-planner:problem:not-signed-in",
+      detail: "Sign in, or continue as a guest, to do that.",
+    }),
+  };
+  const ok = (body: unknown = {}) => ({ ok: true, status: 200, json: async () => body });
+
+  it("start a guest session and are retried once", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(notSignedIn)
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({}) })
+      .mockResolvedValueOnce(ok({ meals: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.getState("2026-08-03")).resolves.toEqual({ meals: [] });
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/state?week=2026-08-03",
+      "/api/auth/guest",
+      "/api/state?week=2026-08-03",
+    ]);
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "POST" });
+  });
+
+  it("share one guest session when several are signed out at once", async () => {
+    let releaseGuest: (value: unknown) => void = () => {};
+    let guestDone = false;
+    const fetchMock = vi.fn((path: string) => {
+      if (path === "/api/auth/guest") {
+        return new Promise((resolve) => {
+          releaseGuest = () => resolve({ ok: true, status: 201, json: async () => ({}) });
+        });
+      }
+      const signedIn = fetchMock.mock.calls.some(([p]) => p === "/api/auth/guest");
+      return Promise.resolve(signedIn && guestDone ? ok([]) : notSignedIn);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = api.getGroceryList("2026-08-03");
+    const second = api.getPlan("2026-08-03");
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([p]) => p === "/api/auth/guest")).toHaveLength(1),
+    );
+    guestDone = true;
+    releaseGuest(undefined);
+
+    await Promise.all([first, second]);
+    expect(fetchMock.mock.calls.filter(([p]) => p === "/api/auth/guest")).toHaveLength(1);
+  });
+
+  it("are not retried a second time", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(notSignedIn)
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({}) })
+      .mockResolvedValueOnce(notSignedIn);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.getPlan("2026-08-03")).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("other 401s are not treated as signed out", async () => {
+    const fetchMock = mockFetch({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        type: "urn:meal-planner:problem:invalid-credentials",
+        detail: "That email and password don't match an account.",
+      }),
+    });
+
+    await expect(api.getPlan("2026-08-03")).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surface a failure to start the guest session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(notSignedIn)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          json: async () => ({ detail: "The database is unavailable." }),
+        }),
+    );
+
+    await expect(api.getPlan("2026-08-03")).rejects.toThrow("The database is unavailable.");
+  });
+});

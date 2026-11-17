@@ -43,6 +43,28 @@ web/ (React)  →  server/ (FastAPI)  →  app/ (domain)  →  Postgres / SQLite
 Nothing above `Database` knows which backend is in use — swapping SQLite for
 Postgres is one environment variable.
 
+### Accounts
+
+Everyone has an account. A first visit starts a **guest** account (no email,
+no password) behind a session cookie, so the planner works immediately;
+signing up attaches credentials to that same account, keeping everything the
+guest made. Repositories are constructed for one user, so no query can run
+unscoped, and someone else's meal answers 404, never 403.
+
+- **Passwords:** argon2id (RFC 9106 parameters, upgraded at login if they
+  change), length 8–128, and the 10,000 most common breached passwords are
+  refused. No composition rules, per NIST SP 800-63B.
+- **Sessions:** a random 256-bit token in an `HttpOnly`, `Secure`,
+  `SameSite=Strict`, `__Host-` cookie. The database stores only its SHA-256,
+  so a leaked table cannot be replayed. Sessions end after 30 days without a
+  visit, and the token is replaced at login and signup (session fixation).
+- **Login** answers identically, in identical time, whether the email is
+  unknown or the password is wrong.
+- **Cross-site requests:** besides `SameSite=Strict`, any write whose
+  `Origin` (or `Sec-Fetch-Site`) says another website sent it is refused.
+- **Tests:** every API route is checked, from the OpenAPI document, to
+  answer 401 without a session, so a new route cannot ship open.
+
 ### Latency
 
 Most of the design here is a response to one measurement: a round trip to a

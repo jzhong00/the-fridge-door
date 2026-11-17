@@ -32,4 +32,31 @@ class InvalidDayError(MealPlannerError):
 
 
 class WeakPasswordError(MealPlannerError):
-    """A password chosen at signup is too short or too long."""
+    """A password chosen at signup is too short, too long or too common."""
+
+
+# --- Accounts ----------------------------------------------------------------
+
+
+class NotSignedInError(MealPlannerError):
+    """No session cookie, or one for a session that has ended."""
+
+
+class InvalidCredentialsError(MealPlannerError):
+    """Login failed. Deliberately does not say whether the email exists."""
+
+
+class InvalidEmailError(MealPlannerError):
+    """A signup email that is not shaped like an address."""
+
+
+class EmailTakenError(MealPlannerError):
+    """Signup with an email that already has an account."""
+
+
+class AlreadySignedUpError(MealPlannerError):
+    """Signup while signed in to an account (rather than a guest)."""
+
+
+class CrossSiteRequestError(MealPlannerError):
+    """A state-changing request sent from another website."""

@@ -20,7 +20,7 @@ of silently starting one that nobody commits.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import delete, func, insert, update
 from sqlalchemy import select as sa_select
@@ -43,6 +43,7 @@ from app.models import (
     WeeklyPlan,
     persisted_id,
 )
+from app.models import Session as SessionRow
 from app.templates import MealTemplate
 
 
@@ -494,28 +495,78 @@ class UserRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def get(self, user_id: int) -> User | None:
+        return self._session.get(User, user_id)
+
     def create(self, *, is_guest: bool = True) -> User:
         user = User(is_guest=is_guest)
         self._session.add(user)
         self._session.flush()
         return user
 
-    def unclaimed_owner_id(self) -> int:
-        """The account that owns the data from before accounts existed,
-        created if there is none yet.
+    def create_account(self, email: str, password_hash: str) -> User:
+        user = User(email=email, password_hash=password_hash, is_guest=False)
+        self._session.add(user)
+        self._session.flush()
+        return user
 
-        TEMPORARY, until sessions land (Phase 1, step 4): until then every
-        request acts as this account, so the app behaves exactly as the
-        single-user app it was. It is removed when requests carry a session.
-        """
-        owner = self._session.exec(
-            select(User)
-            .where(
-                col(User.is_guest).is_(False),
-                col(User.email).is_(None),
-            )
-            .order_by(col(User.id))
+    def find_by_email(self, email: str) -> User | None:
+        """The account with that email, ignoring case (the unique index is on
+        `lower(email)`, which this matches so it can use it)."""
+        return self._session.exec(
+            select(User).where(func.lower(User.email) == email.lower())
         ).first()
-        if owner is None:
-            owner = self.create(is_guest=False)
-        return persisted_id(owner)
+
+    def set_credentials(self, user: User, email: str, password_hash: str) -> None:
+        """Give a guest (or the unclaimed owner) an email and password. The
+        row, and so everything it owns, stays the same."""
+        user.email = email
+        user.password_hash = password_hash
+        user.is_guest = False
+        self._session.flush()
+
+    def set_password_hash(self, user: User, password_hash: str) -> None:
+        user.password_hash = password_hash
+        self._session.flush()
+
+    def touch(self, user_id: int, now: datetime) -> None:
+        """Record a visit, which keeps a guest from being cleaned up."""
+        self._session.execute(
+            update(User).where(col(User.id) == user_id).values(last_seen_at=now)
+        )
+
+
+class SessionRepository:
+    """Signed-in browsers, found by the SHA-256 of their cookie."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def create(self, token_hash: str, user_id: int, expires_at: datetime) -> None:
+        self._session.add(
+            SessionRow(token_hash=token_hash, user_id=user_id, expires_at=expires_at)
+        )
+        self._session.flush()
+
+    def find_live(
+        self, token_hash: str, now: datetime
+    ) -> tuple[SessionRow, User] | None:
+        """The session and its user, if the session exists and has not
+        expired. One query: this runs on every request."""
+        return self._session.exec(
+            select(SessionRow, User)
+            .join(User, col(User.id) == SessionRow.user_id)
+            .where(SessionRow.token_hash == token_hash, SessionRow.expires_at > now)
+        ).first()
+
+    def extend(self, token_hash: str, expires_at: datetime) -> None:
+        self._session.execute(
+            update(SessionRow)
+            .where(col(SessionRow.token_hash) == token_hash)
+            .values(expires_at=expires_at)
+        )
+
+    def delete(self, token_hash: str) -> None:
+        self._session.execute(
+            delete(SessionRow).where(col(SessionRow.token_hash) == token_hash)
+        )

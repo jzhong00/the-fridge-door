@@ -72,6 +72,209 @@
         }
       }
     },
+    "/api/auth/guest": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start Guest",
+        "description": "Start a guest session: a real account with no email or password.\n\nThe app calls this when a request comes back 401, so a first visit\nlands straight in a working planner. A caller who is already signed in\ngets their own account back (200) rather than a second one.",
+        "operationId": "start_guest_api_auth_guest_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Already signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem Details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/signup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign Up",
+        "description": "Create an account. A guest becomes the account, keeping their data.",
+        "operationId": "sign_up_api_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem Details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Log In",
+        "description": "Sign in with an email and password. Always issues a new session.",
+        "operationId": "log_in_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem Details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Log Out",
+        "description": "End this session. Succeeds even if it had already ended.",
+        "operationId": "log_out_api_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "description": "Problem Details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Who Am I",
+        "description": "The signed-in account, or 401 not-signed-in.",
+        "operationId": "who_am_i_api_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Problem Details (RFC 9457)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/state": {
       "get": {
         "tags": [
@@ -856,6 +1059,32 @@
   },
   "components": {
     "schemas": {
+      "Account": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "is_guest": {
+            "type": "boolean",
+            "title": "Is Guest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "is_guest"
+        ],
+        "title": "Account",
+        "description": "Who is signed in. No id: the client never needs it, and a numeric id\nwould tell anyone signing up roughly how many accounts exist."
+      },
       "AppState": {
         "properties": {
           "week_start": {
@@ -902,6 +1131,30 @@
         ],
         "title": "AppState",
         "description": "Everything the UI needs for one week, in a single response.\n\nThe point of this endpoint is latency: the Streamlit version issued a\nseparate query per section on every interaction, which is unnoticeable\nagainst a local file and painful across a network. One request, one\nround trip."
+      },
+      "Credentials": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "Credentials",
+        "description": "An email and password, for signup and login.\n\nThe bounds here only keep request bodies sane. The rules a password must\nmeet at signup are checked in app/security.py, which can say exactly\nwhat is wrong, rather than with a generic validation error."
       },
       "DayAssignment": {
         "properties": {
