@@ -124,6 +124,13 @@ Tests: `web/src/hooks/usePlanner.test.ts`, `web/src/App.test.tsx`.
   `Depends(..., scope="function")` so the commit happens before the
   response is sent: with the default scope a failed commit had already
   answered 200.
+- Every table holding someone's data gets a row-level security policy for
+  `meal_planner_app` in the migration that creates it, and explicit grants
+  (no default privileges, so a new table is closed until a migration opens
+  it). `tests/test_rls.py` fails if a table is neither under row security
+  nor listed there as an auth table. Requests declare their user with
+  `app.db.act_as`, called once, in `server/deps.py`. The web app connects
+  as `meal_planner_app`; migrations and jobs connect as the owner.
 - Get-or-create is `INSERT ... ON CONFLICT DO NOTHING` then a lookup, never
   "look, then insert": two requests creating the same row at once both
   succeed instead of one hitting the unique index, which in Postgres also

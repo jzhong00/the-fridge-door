@@ -13,7 +13,7 @@ from fastapi import Depends, Request
 from sqlmodel import Session
 
 from app.auth import AuthService, CurrentUser
-from app.db import Database, load_env_file
+from app.db import Database, act_as, load_env_file
 from app.exceptions import NotSignedInError
 from app.repositories import (
     IngredientRepository,
@@ -98,7 +98,13 @@ OptionalUserDep = Annotated[CurrentUser | None, Depends(get_optional_user)]
 def get_services(session: TransactionDep, user: CurrentUserDep) -> Services:
     """The repositories for this request, bound to its user. Requiring this
     is what makes a route need a session: there is no way to get
-    repositories without one."""
+    repositories without one.
+
+    Two layers, set from the same user: the repositories filter every query
+    by them, and `act_as` tells Postgres, whose row-level security filters
+    again, so a query that forgot its filter still sees only their rows.
+    """
+    act_as(session, user.id)
     return Services(
         meals=MealRepository(session, user_id=user.id),
         ingredients=IngredientRepository(session, user_id=user.id),

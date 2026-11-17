@@ -7,7 +7,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import Engine, event
+from sqlalchemy import Engine, event, text
 from sqlalchemy.engine import make_url
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -59,6 +59,31 @@ def is_local_database(url: str) -> bool:
     """
     parsed = make_url(url)
     return parsed.get_backend_name() == "sqlite" or parsed.host in _LOCAL_HOSTS
+
+
+#: The role the web app connects as in Postgres, created by migration
+#: 20261117_0002. Row-level security applies to it; the owner, which runs
+#: migrations and jobs, is not subject to it.
+RUNTIME_ROLE = "meal_planner_app"
+
+
+def act_as(session: Session, user_id: int) -> None:
+    """Declare, for the rest of this transaction, whose request it is.
+
+    Postgres's row-level security policies read this, so from here on the
+    runtime role can see and write only this user's rows, whatever a query
+    says. `set_config(..., true)` is transaction-local, like SET LOCAL, so it
+    ends with the transaction and a pooled connection cannot carry one
+    user's identity into the next request. (SET LOCAL itself cannot take a
+    bind parameter; set_config can.) A no-op on SQLite, which has no row
+    security; there the repositories' own scoping is the only layer.
+    """
+    if session.get_bind().dialect.name != "postgresql":
+        return
+    session.execute(
+        text("SELECT set_config('app.user_id', :user_id, true)"),
+        {"user_id": str(user_id)},
+    )
 
 
 def _enforce_sqlite_foreign_keys(engine: Engine) -> None:
