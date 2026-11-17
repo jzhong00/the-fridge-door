@@ -193,6 +193,9 @@ function IngredientChip({
           </Label>
           <Input
             id={`qty-${ingredient.ingredient_id}`}
+            // Named for the ingredient: the add form above also has a
+            // "Quantity" field, and a screen reader needs to tell them apart.
+            aria-label={`Quantity of ${ingredient.name}`}
             type="number"
             min={0}
             step="any"
@@ -210,6 +213,7 @@ function IngredientChip({
           </Label>
           <Input
             id={`unit-${ingredient.ingredient_id}`}
+            aria-label={`Unit of ${ingredient.name}`}
             value={unit}
             onChange={(e) => setUnit(e.target.value)}
             className="h-8"

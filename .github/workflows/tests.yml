@@ -123,6 +123,55 @@ jobs:
       - name: Typecheck and build
         run: npm run build
 
+  # The production build in a real browser against the real API, on a fresh
+  # SQLite database. The unit suites test components in jsdom; this proves
+  # the assembled app works.
+  e2e:
+    name: end-to-end (Playwright)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install API dependencies
+        working-directory: .
+        run: pip install -r requirements-dev.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+
+      # Traces and screenshots of any failure, viewable with
+      # `npx playwright show-trace`.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 7
+
   # Guards against the migrations and the models drifting apart. The tests
   # build their schema from the models for speed, so without this a model
   # change could ship with no matching migration and only fail in production.

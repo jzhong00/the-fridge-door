@@ -1,4 +1,4 @@
-import { defineConfig, mergeConfig } from "vitest/config";
+import { configDefaults, defineConfig, mergeConfig } from "vitest/config";
 
 import viteConfig from "./vite.config.ts";
 
@@ -9,6 +9,8 @@ export default mergeConfig(
       environment: "jsdom",
       globals: true,
       setupFiles: ["./src/test/setup.ts"],
+      // Playwright's specs run in a real browser, not here.
+      exclude: [...configDefaults.exclude, "e2e/**"],
       css: false,
       coverage: {
         provider: "v8",

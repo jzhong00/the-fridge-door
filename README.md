@@ -162,6 +162,7 @@ pytest               # Python: domain, repositories, API
 ruff check . && ruff format --check .
 cd web && npm test   # Frontend: components, client, date handling
 cd web && npm run lint
+cd web && npm run test:e2e   # Playwright: the built app in Chromium
 ```
 
 Python tests run against SQLite by default and Postgres when

@@ -118,3 +118,10 @@ table names, named check and unique constraints, indexed foreign keys,
   for the frontend in `web/vitest.config.ts`. Raise them as coverage rises;
   never lower one to make a build pass.
 - `pyright` type-checks `app/` and `server/`.
+- Playwright runs the production build in Chromium against the real API on
+  a fresh SQLite database (`npm run test:e2e`, and a CI job). Each spec works
+  in its own week and names its own meals, so specs never depend on each
+  other. Locate elements the way a user would (role and accessible name);
+  if a control cannot be found that way, fix its accessible name rather than
+  reaching for a CSS selector.
+  Tests: `web/e2e/planner.spec.ts`.
