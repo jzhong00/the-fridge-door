@@ -13,6 +13,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 # Registers the tables on SQLModel.metadata for create_tables().
 from app import models  # noqa: F401
+from app.exceptions import KeepsWrites
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
@@ -158,9 +159,19 @@ class Database:
 
         expire_on_commit=False keeps loaded attributes readable after the
         block, so a route can return the objects it read or wrote.
+
+        One exception to rolling back on error: an error marked `KeepsWrites`
+        (a failed login, which has just recorded the attempt) commits first,
+        so the record survives the failure it records.
         """
-        with (
-            Session(self._engine, expire_on_commit=False, autobegin=False) as session,
-            session.begin(),
-        ):
-            yield session
+        with Session(self._engine, expire_on_commit=False, autobegin=False) as session:
+            transaction = session.begin()
+            try:
+                yield session
+            except KeepsWrites:
+                transaction.commit()
+                raise
+            except BaseException:
+                transaction.rollback()
+                raise
+            transaction.commit()

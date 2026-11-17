@@ -30,9 +30,11 @@ pytestmark = pytest.mark.skipif(
     reason="row-level security is a Postgres feature",
 )
 
-#: Tables the runtime role uses without row security: signing in has to
-#: find a session or an email before anyone is known.
-AUTH_TABLES = {"users", "sessions"}
+#: Tables the runtime role uses without row security, because their rows
+#: belong to no one user: signing in has to find a session or an email
+#: before anyone is known, and throttle buckets are keyed by hashed
+#: networks and emails, not accounts.
+AUTH_TABLES = {"users", "sessions", "rate_limits"}
 #: A password for the test server only, never a real deployment's.
 TEST_PASSWORD = "rls-test-only-password"
 ALICE, BOB = 1, 2

@@ -34,6 +34,7 @@ from app.exceptions import (
     MealNotFoundError,
     MealPlannerError,
     NotSignedInError,
+    TooManyAttemptsError,
     UnitMismatchError,
     WeakPasswordError,
 )
@@ -107,6 +108,7 @@ _DOMAIN_ERRORS: dict[type[MealPlannerError], tuple[int, str]] = {
     CrossSiteRequestError: (403, "cross-site-request"),
     EmailTakenError: (409, "email-taken"),
     AlreadySignedUpError: (409, "already-signed-up"),
+    TooManyAttemptsError: (429, "too-many-attempts"),
 }
 
 #: Shown for any validation failure. Field-level reasons are in
@@ -120,7 +122,14 @@ async def _domain_error(request: Request, exc: Exception) -> JSONResponse:
         (mapping for kind, mapping in _DOMAIN_ERRORS.items() if isinstance(exc, kind)),
         (400, "domain-error"),
     )
-    return problem_response(request, status=status, slug=slug, detail=str(exc))
+    headers = (
+        {"Retry-After": str(exc.retry_after_seconds)}
+        if isinstance(exc, TooManyAttemptsError)
+        else None
+    )
+    return problem_response(
+        request, status=status, slug=slug, detail=str(exc), headers=headers
+    )
 
 
 async def _validation_error(request: Request, exc: Exception) -> JSONResponse:

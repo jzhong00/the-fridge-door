@@ -3,6 +3,7 @@ repositories over both."""
 
 from __future__ import annotations
 
+import os
 from collections.abc import Generator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -70,8 +71,26 @@ def get_transaction() -> Generator[Session]:
 TransactionDep = Annotated[Session, Depends(get_transaction, scope="function")]
 
 
-def get_auth(session: TransactionDep) -> AuthService:
-    return AuthService(session, now=datetime.now(UTC))
+def client_address(request: Request) -> str:
+    """The caller's IP address, for throttling.
+
+    On Vercel, the last entry of `x-vercel-forwarded-for`, the header the
+    platform sets. Never `x-forwarded-for` or `x-real-ip`, which a client can
+    write itself: trusting them would let anyone dodge a limit by sending a
+    different made-up address each time. Last rather than first, because a
+    proxy appends the address it saw, so anything before that came from the
+    client. Elsewhere (local development, tests) no proxy is trusted at all.
+    """
+    if os.getenv("VERCEL"):
+        forwarded = request.headers.get("x-vercel-forwarded-for", "")
+        last = forwarded.rsplit(",", 1)[-1].strip()
+        if last:
+            return last
+    return request.client.host if request.client else "unknown"
+
+
+def get_auth(request: Request, session: TransactionDep) -> AuthService:
+    return AuthService(session, now=datetime.now(UTC), address=client_address(request))
 
 
 AuthDep = Annotated[AuthService, Depends(get_auth)]

@@ -17,7 +17,9 @@ from sqlalchemy import event, text
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.orm import Session as OrmSession
 
+import app.exceptions as app_exceptions
 from app.db import Database
+from app.exceptions import KeepsWrites, MealPlannerError
 from app.repositories import IngredientRepository, MealRepository
 
 
@@ -43,6 +45,38 @@ def test_work_done_through_a_repository_is_kept_only_if_the_caller_commits(
 
     with db.transaction() as session:
         assert MealRepository(session, user_id=user_id).list_all() == []
+
+
+class _RecordedThenFailed(KeepsWrites, MealPlannerError):
+    """Like a failed login: an error whose request keeps what it recorded."""
+
+
+def test_an_error_marked_keeps_writes_commits_what_came_before_it(
+    db: Database, user_id: int
+) -> None:
+    with pytest.raises(_RecordedThenFailed), db.transaction() as session:
+        MealRepository(session, user_id=user_id).add("Recorded")
+        raise _RecordedThenFailed("refused, but counted")
+
+    with db.transaction() as session:
+        names = [m.name for m in MealRepository(session, user_id=user_id).list_all()]
+    assert names == ["Recorded"]
+
+
+def test_only_marked_errors_keep_writes() -> None:
+    marked = {
+        cls
+        for cls in vars(app_exceptions).values()
+        if isinstance(cls, type)
+        and issubclass(cls, KeepsWrites)
+        and cls is not KeepsWrites
+    }
+    # Each of these must be raised before anything but its record is
+    # written; adding one is a decision, so it is listed here.
+    assert marked == {
+        app_exceptions.InvalidCredentialsError,
+        app_exceptions.EmailTakenError,
+    }
 
 
 def test_a_whole_request_lands_together(db: Database, user_id: int) -> None:

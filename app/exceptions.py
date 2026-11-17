@@ -6,9 +6,26 @@ surface `str(exc)` directly instead of translating error codes.
 
 from __future__ import annotations
 
+import math
+from datetime import timedelta
+
 
 class MealPlannerError(Exception):
     """Base class for every expected, user-facing failure."""
+
+
+class KeepsWrites(Exception):
+    """Marks an error whose request should still commit what it wrote.
+
+    Normally an error rolls the request's transaction back. A failed login
+    is an error, and the attempt it records must outlive it, or throttling
+    would count nothing: the record would roll back with the request. So
+    the few errors raised after recording an attempt carry this marker,
+    and `Database.transaction()` commits before letting them through.
+
+    Only safe where nothing but the record has been written by the time the
+    error is raised. Each use says so where it is raised.
+    """
 
 
 class DuplicateNameError(MealPlannerError):
@@ -42,7 +59,7 @@ class NotSignedInError(MealPlannerError):
     """No session cookie, or one for a session that has ended."""
 
 
-class InvalidCredentialsError(MealPlannerError):
+class InvalidCredentialsError(KeepsWrites, MealPlannerError):
     """Login failed. Deliberately does not say whether the email exists."""
 
 
@@ -50,7 +67,7 @@ class InvalidEmailError(MealPlannerError):
     """A signup email that is not shaped like an address."""
 
 
-class EmailTakenError(MealPlannerError):
+class EmailTakenError(KeepsWrites, MealPlannerError):
     """Signup with an email that already has an account."""
 
 
@@ -60,3 +77,11 @@ class AlreadySignedUpError(MealPlannerError):
 
 class CrossSiteRequestError(MealPlannerError):
     """A state-changing request sent from another website."""
+
+
+class TooManyAttemptsError(MealPlannerError):
+    """Throttled: too many attempts recently from this account or network."""
+
+    def __init__(self, message: str, *, retry_after: timedelta) -> None:
+        self.retry_after_seconds = max(1, math.ceil(retry_after.total_seconds()))
+        super().__init__(message)

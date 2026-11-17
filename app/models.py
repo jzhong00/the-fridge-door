@@ -253,6 +253,33 @@ class WeeklyPlan(_Timestamps, table=True):
     servings: int | None = None
 
 
+class RateLimit(_Timestamps, table=True):
+    """Recent attempts at one throttled thing, such as logins to one account
+    from one network. See app/ratelimit.py for the rules.
+
+    `subject` is a keyed hash (HMAC) of what is being limited, never the
+    email or IP address itself: comparing is all the throttle needs, and a
+    plain hash of an IPv4 address can be reversed by trying all four
+    billion. Belongs to no user, so it has no row-level security policy.
+    """
+
+    __tablename__: str = "rate_limits"  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    #: Which rule, e.g. "login-account".
+    scope: str = Field(primary_key=True)
+    subject: str = Field(primary_key=True)
+    #: Attempts counted since `window_started_at`.
+    hits: int = 0
+    window_started_at: datetime = Field(
+        sa_type=DateTime(timezone=True),  # pyright: ignore[reportArgumentType]
+    )
+    #: Refused until then. NULL: not blocked.
+    blocked_until: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # pyright: ignore[reportArgumentType]
+    )
+
+
 #: Every table, so callers needing the full list do not have to keep one.
 ALL_TABLES: tuple[type[SQLModel], ...] = (
     User,
@@ -261,6 +288,7 @@ ALL_TABLES: tuple[type[SQLModel], ...] = (
     Ingredient,
     MealIngredient,
     WeeklyPlan,
+    RateLimit,
 )
 
 __all__ = [
@@ -270,6 +298,7 @@ __all__ = [
     "Ingredient",
     "Meal",
     "MealIngredient",
+    "RateLimit",
     "Session",
     "User",
     "WeeklyPlan",
