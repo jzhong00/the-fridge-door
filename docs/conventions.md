@@ -153,6 +153,12 @@ Tests: `web/src/hooks/usePlanner.test.ts`, `web/src/hooks/useAccount.test.tsx`,
   nor listed there as an auth table. Requests declare their user with
   `app.db.act_as`, called once, in `server/deps.py`. The web app connects
   as `meal_planner_app`; migrations and jobs connect as the owner.
+- Owner-level work runs from two entry points and nowhere else:
+  `python -m app.jobs <name>` (scheduled, `.github/workflows/jobs.yml`) and
+  `python -m app.cli <command>` (by hand). Both connect as the owner, print
+  the target first, and resolve the URL like migrations do, so a database
+  not on this machine must be named in the shell. Jobs take the time as an
+  argument and support `--dry-run`.
 - Get-or-create is `INSERT ... ON CONFLICT DO NOTHING` then a lookup, never
   "look, then insert": two requests creating the same row at once both
   succeed instead of one hitting the unique index, which in Postgres also

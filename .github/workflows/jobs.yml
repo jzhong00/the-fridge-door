@@ -1,0 +1,76 @@
+name: Scheduled jobs
+
+# Runs app/jobs.py against production: today, purge-guests, which deletes
+# guests idle for 30 days (with everything they made), expired sessions and
+# rate-limit records past every rule's window.
+#
+# Jobs connect as the database owner, because their work spans users and
+# row-level security exists to stop the web app doing that. The URL lives
+# in the `jobs` environment (secret MEAL_PLANNER_JOBS_DB_URL: the direct,
+# non-pooled owner URL, postgresql+psycopg://...). Not the `production`
+# environment, whose required approval would stop a scheduled run every
+# night; restrict `jobs` to the main branch in its settings instead.
+#
+# Run by hand from the Actions tab to try a job first: dry run is the
+# default there, and only counts what would be removed.
+
+on:
+  schedule:
+    # 17:17 UTC is 3:17 a.m. in Brisbane: quiet, and off the top of the hour,
+    # when GitHub's scheduler is busiest and delays runs.
+    - cron: "17 17 * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Job to run
+        type: choice
+        options: [purge-guests]
+        default: purge-guests
+      dry_run:
+        description: Only count what would change
+        type: boolean
+        default: true
+
+concurrency:
+  group: production-jobs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: ${{ inputs.job || 'purge-guests' }}
+    runs-on: ubuntu-latest
+    environment: jobs
+    timeout-minutes: 10
+
+    env:
+      MEAL_PLANNER_DB_URL: ${{ secrets.MEAL_PLANNER_JOBS_DB_URL }}
+      JOB: ${{ inputs.job || 'purge-guests' }}
+      # Scheduled runs have no inputs, so they are never dry runs.
+      DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # A missing secret would leave the job pointed at a SQLite file on
+      # this runner, where it would succeed at deleting nothing.
+      - name: Check the target is Postgres
+        run: |
+          case "$MEAL_PLANNER_DB_URL" in
+            postgresql+psycopg://*) echo "Target: Postgres" ;;
+            "") echo "::error::MEAL_PLANNER_JOBS_DB_URL is not set on the jobs environment"; exit 1 ;;
+            *) echo "::error::MEAL_PLANNER_JOBS_DB_URL must start with postgresql+psycopg://"; exit 1 ;;
+          esac
+
+      - name: Run ${{ env.JOB }}
+        run: python -m app.jobs "$JOB" $DRY_RUN

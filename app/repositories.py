@@ -21,10 +21,12 @@ of silently starting one that nobody commits.
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any, cast
 
-from sqlalchemy import delete, func, insert, update
+from sqlalchemy import ColumnElement, and_, delete, func, insert, or_, update
 from sqlalchemy import select as sa_select
 from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.engine import CursorResult
 from sqlmodel import Session, col, select
 
 from app.exceptions import (
@@ -53,6 +55,20 @@ def _dialect_insert(session: Session, model: type):
     if session.get_bind().dialect.name == "postgresql":
         return postgresql.insert(model)
     return sqlite.insert(model)
+
+
+def _count_or_delete(
+    session: Session, model: type, condition: ColumnElement[bool], *, dry_run: bool
+) -> int:
+    """How many rows match, deleting them unless this is a dry run."""
+    if dry_run:
+        return session.execute(
+            sa_select(func.count()).select_from(model).where(condition)
+        ).scalar_one()
+    # A DELETE returns a CursorResult, which has the count; the generic
+    # Result type `execute` is annotated with does not.
+    deleted = cast(CursorResult[Any], session.execute(delete(model).where(condition)))
+    return deleted.rowcount
 
 
 def _as_day(day: DayOfWeek | str) -> str:
@@ -535,6 +551,29 @@ class UserRepository:
         user.password_hash = password_hash
         self._session.flush()
 
+    def unclaimed_owners(self) -> list[User]:
+        """Accounts with no credentials that are not guests: the one the
+        accounts migration created to hold the data from before accounts,
+        until someone claims it. There should be at most one."""
+        return list(
+            self._session.exec(
+                select(User)
+                .where(col(User.is_guest).is_(False), col(User.email).is_(None))
+                .order_by(col(User.id))
+            ).all()
+        )
+
+    def purge_idle_guests(self, seen_before: datetime, *, dry_run: bool) -> int:
+        """Delete guests not seen since `seen_before`, and through ON DELETE
+        CASCADE everything they made and their sessions. Accounts, and the
+        unclaimed owner, are never guests, so are never touched."""
+        return _count_or_delete(
+            self._session,
+            User,
+            and_(col(User.is_guest).is_(True), col(User.last_seen_at) < seen_before),
+            dry_run=dry_run,
+        )
+
     def touch(self, user_id: int, now: datetime) -> None:
         """Record a visit, which keeps a guest from being cleaned up."""
         self._session.execute(
@@ -576,6 +615,11 @@ class SessionRepository:
         self._session.execute(
             delete(SessionRow).where(col(SessionRow.token_hash) == token_hash)
         )
+
+    def purge_expired(self, now: datetime, *, dry_run: bool) -> int:
+        """Delete sessions past their expiry, which can never sign in again."""
+        expired = col(SessionRow.expires_at) <= now
+        return _count_or_delete(self._session, SessionRow, expired, dry_run=dry_run)
 
 
 class RateLimitRepository:
@@ -638,4 +682,22 @@ class RateLimitRepository:
             delete(RateLimit).where(
                 col(RateLimit.scope) == scope, col(RateLimit.subject) == subject
             )
+        )
+
+    def purge_stale(
+        self, started_before: datetime, now: datetime, *, dry_run: bool
+    ) -> int:
+        """Delete buckets that can no longer refuse or count anything: their
+        window began before `started_before` and they are not blocked."""
+        return _count_or_delete(
+            self._session,
+            RateLimit,
+            and_(
+                col(RateLimit.window_started_at) < started_before,
+                or_(
+                    col(RateLimit.blocked_until).is_(None),
+                    col(RateLimit.blocked_until) <= now,
+                ),
+            ),
+            dry_run=dry_run,
         )
