@@ -201,18 +201,15 @@ class AuthService:
             network,
             "Too many signup attempts from your network. Try again in {wait}.",
         )
-        email = normalise_email(email)
-        check_password_policy(password, email=email)
-        if self._users.find_by_email(email) is not None:
+        try:
+            email, password_hash = self._new_credentials(email, password)
+        except EmailTakenError:
             # Keeps writes: the only thing written so far is this record
             # (and perhaps a session refresh), which must outlive the error.
             self._limits.record(TAKEN_EMAILS_PER_NETWORK, network)
             events.record("signup_email_taken", subject=network)
-            raise EmailTakenError(
-                "An account with that email already exists. Log in instead."
-            )
+            raise
 
-        password_hash = hash_password(password)
         if current is None:
             user = self._users.create_account(email, password_hash)
             outcome = "account_created"
@@ -225,6 +222,18 @@ class AuthService:
             outcome = "guest_upgraded"
         events.record("signed_up", user_id=persisted_id(user), outcome=outcome)
         return self._start_session(user)
+
+    def claim(self, user_id: int, email: str, password: str) -> None:
+        """Give the unclaimed owner (the account holding the data from before
+        accounts existed) an email and password. For `app.cli`, run by
+        whoever deploys; through the same checks as signing up.
+        """
+        user = self._users.get(user_id)
+        if user is None or user.is_guest or user.email is not None:
+            raise ValueError(f"User {user_id} is not an unclaimed account.")
+        email, password_hash = self._new_credentials(email, password)
+        self._users.set_credentials(user, email, password_hash)
+        events.record("account_claimed", user_id=user_id)
 
     def log_in(
         self, current: CurrentUser | None, email: str, password: str
@@ -309,6 +318,18 @@ class AuthService:
         raise TooManyAttemptsError(
             message.format(wait=_describe(wait)), retry_after=wait
         )
+
+    def _new_credentials(self, email: str, password: str) -> tuple[str, str]:
+        """The normalised email and password hash for a new login, after the
+        checks every way of getting one goes through: an email shaped like
+        an address, an acceptable password, and an email no one else has."""
+        email = normalise_email(email)
+        check_password_policy(password, email=email)
+        if self._users.find_by_email(email) is not None:
+            raise EmailTakenError(
+                "An account with that email already exists. Log in instead."
+            )
+        return email, hash_password(password)
 
     def _start_session(self, user: User) -> SignedIn:
         token = new_session_token()

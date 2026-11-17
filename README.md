@@ -259,11 +259,21 @@ configuration and the client uses relative paths.
 
 - **Framework preset:** Other (the build is defined in `vercel.json`)
 - **Root directory:** the repository root
-- **Environment variable:** `MEAL_PLANNER_DB_URL` (Neon's pooled URL),
-  Production scope
+- **Environment variables** (Production scope):
+  - `MEAL_PLANNER_DB_URL`: Neon's pooled URL for `meal_planner_app`, the
+    role row-level security applies to, not the owner.
+  - `MEAL_PLANNER_RATE_LIMIT_KEY`: a long random value; throttling hashes
+    emails and addresses with it.
 - **Migrations:** a GitHub environment named `production` with a required
-  reviewer, holding `MEAL_PLANNER_MIGRATION_DB_URL` (Neon's direct,
+  reviewer, holding `MEAL_PLANNER_MIGRATION_DB_URL` (the owner's direct,
   non-pooled URL). See [Migrations](#migrations).
+- **Scheduled jobs:** a GitHub environment named `jobs`, limited to `main`
+  and with no reviewer (it runs nightly), holding `MEAL_PLANNER_JOBS_DB_URL`
+  (the owner's direct URL). `.github/workflows/jobs.yml` runs
+  `python -m app.jobs purge-guests` at 3:17 a.m. Brisbane time: guests
+  idle for 30 days go, with everything they made, along with expired
+  sessions and stale rate-limit records. Run it by hand from the Actions
+  tab as a dry run first.
 - **Region:** `syd1`, set in `vercel.json`. Functions default to `iad1`
   (Virginia); running them next to the database is worth more than any
   application-level optimisation here.
@@ -271,3 +281,20 @@ configuration and the client uses relative paths.
 `api/requirements.txt` sits next to the serverless entry point deliberately:
 with a custom `buildCommand`, Vercel's Python builder does not pick up the
 root file, and the function fails to import its dependencies.
+
+### Claiming the data from before accounts
+
+The accounts migration gave every existing meal and plan to one account
+with no email or password, since a migration must not contain a secret.
+After migrating, whoever deploys gives it a login, connected as the owner:
+
+```bash
+export MEAL_PLANNER_DB_URL='postgresql+psycopg://...'   # owner, direct URL
+python3 scripts/db_report.py                             # check the host first
+python3 -m app.cli claim-account
+unset MEAL_PLANNER_DB_URL
+```
+
+It shows how many meals the account holds, asks for an email and a password
+(twice, read without echoing and never printed), applies the same checks as
+signing up, and changes nothing until you type `yes`.

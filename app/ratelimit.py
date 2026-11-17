@@ -211,3 +211,14 @@ class RateLimiter:
 def _as_utc(moment: datetime) -> datetime:
     """SQLite hands timestamps back without a zone; they were stored as UTC."""
     return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+#: A bucket whose window began longer ago than this cannot refuse or count
+#: anything any more: every rule forgets or starts over within it. The
+#: purge job deletes such buckets.
+STALE_AFTER = max(
+    LOGIN_PER_ACCOUNT_AND_NETWORK.forget_after,
+    LOGIN_PER_ACCOUNT.forget_after,
+    GUESTS_PER_NETWORK.period,
+    TAKEN_EMAILS_PER_NETWORK.period,
+)
