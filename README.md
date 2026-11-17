@@ -298,3 +298,17 @@ unset MEAL_PLANNER_DB_URL
 It shows how many meals the account holds, asks for an email and a password
 (twice, read without echoing and never printed), applies the same checks as
 signing up, and changes nothing until you type `yes`.
+
+### Replacing a forgotten password
+
+Until password reset by email exists, the same owner connection can give an
+account a new password:
+
+```bash
+python3 -m app.cli set-password
+```
+
+It asks for the account's email and the new password (twice, never printed),
+applies the same password checks, and changes nothing until you type `yes`.
+It then ends every session the account has, so any browser still signed in
+with the old password is signed out.
