@@ -77,6 +77,9 @@ jobs:
           # Empty for the SQLite leg, which makes conftest fall back to
           # per-test temporary files.
           TEST_DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://postgres:postgres@localhost:5432/mealplanner_test' || '' }}
+          # Without this, an empty URL on the Postgres leg would fall back to
+          # SQLite and pass, proving nothing about Postgres.
+          REQUIRE_TEST_DATABASE: ${{ matrix.database == 'postgres' && '1' || '' }}
         run: pytest -q --cov --cov-report=term
 
   # The frontend is a separate toolchain, so the Python jobs above cannot

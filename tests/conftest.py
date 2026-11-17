@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 
 import pytest
+from database_safety import assert_disposable, check_test_database_settings
 from sqlmodel import SQLModel
 
 from app.db import DATABASE_URL_ENV_VAR, Database
@@ -28,6 +29,16 @@ from server.deps import reset_services_cache
 
 #: Point the suite at a real Postgres. Unset means local SQLite files.
 TEST_DATABASE_URL_ENV_VAR = "TEST_DATABASE_URL"
+#: Set to "1" where a Postgres run is the point, so a missing URL fails.
+REQUIRE_TEST_DATABASE_ENV_VAR = "REQUIRE_TEST_DATABASE"
+
+
+def pytest_configure(config) -> None:
+    """Refuse to start against a database that is not a disposable test one."""
+    check_test_database_settings(
+        url=os.getenv(TEST_DATABASE_URL_ENV_VAR),
+        required=os.getenv(REQUIRE_TEST_DATABASE_ENV_VAR) == "1",
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +56,9 @@ def db(tmp_path, monkeypatch) -> Database:
     database = Database(url)
     if shared_url:
         # A server-backed database persists between tests, unlike a temp
-        # file, so it has to be emptied explicitly.
+        # file, so it has to be emptied explicitly. Checked again here, right
+        # before the drop, in case the variable changed after startup.
+        assert_disposable(shared_url)
         SQLModel.metadata.drop_all(database.engine)
 
     # Built straight from the models rather than by replaying migrations,
