@@ -616,6 +616,11 @@ class SessionRepository:
             delete(SessionRow).where(col(SessionRow.token_hash) == token_hash)
         )
 
+    def delete_all_for(self, user_id: int) -> int:
+        """End every session of one account, wherever it is signed in."""
+        mine = col(SessionRow.user_id) == user_id
+        return _count_or_delete(self._session, SessionRow, mine, dry_run=False)
+
     def purge_expired(self, now: datetime, *, dry_run: bool) -> int:
         """Delete sessions past their expiry, which can never sign in again."""
         expired = col(SessionRow.expires_at) <= now

@@ -28,7 +28,7 @@ _ALLOWED = frozenset(
         "rule",  # which throttle
         "retry_after_seconds",
         "subject",  # a prefix of a keyed hash; correlates attempts only
-        "removed",  # counts of rows a scheduled job deleted, by kind
+        "removed",  # counts of rows deleted, by kind
         "dry_run",
     }
 )

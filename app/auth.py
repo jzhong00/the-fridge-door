@@ -235,6 +235,24 @@ class AuthService:
         self._users.set_credentials(user, email, password_hash)
         events.record("account_claimed", user_id=user_id)
 
+    def set_password(self, user_id: int, password: str) -> int:
+        """Replace an account's password and end all of its sessions,
+        returning how many were ended. For `app.cli`, run by whoever deploys,
+        until password reset by email exists (Phase 2).
+
+        Every session goes, because a new password is often the answer to
+        "someone else may have it": a browser signed in with the old one
+        must not stay signed in.
+        """
+        user = self._users.get(user_id)
+        if user is None or user.email is None:
+            raise ValueError(f"User {user_id} is not an account with a login.")
+        check_password_policy(password, email=user.email)
+        self._users.set_password_hash(user, hash_password(password))
+        ended = self._sessions.delete_all_for(user_id)
+        events.record("password_set", user_id=user_id, removed={"sessions": ended})
+        return ended
+
     def log_in(
         self, current: CurrentUser | None, email: str, password: str
     ) -> SignedIn:
