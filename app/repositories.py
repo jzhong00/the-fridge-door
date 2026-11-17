@@ -39,12 +39,20 @@ from app.models import (
     Ingredient,
     Meal,
     MealIngredient,
+    RateLimit,
     User,
     WeeklyPlan,
     persisted_id,
 )
 from app.models import Session as SessionRow
 from app.templates import MealTemplate
+
+
+def _dialect_insert(session: Session, model: type):
+    """INSERT with the dialect's ON CONFLICT support (same API on both)."""
+    if session.get_bind().dialect.name == "postgresql":
+        return postgresql.insert(model)
+    return sqlite.insert(model)
 
 
 def _as_day(day: DayOfWeek | str) -> str:
@@ -306,10 +314,8 @@ class MealRepository(_Repository):
         if existing is not None:
             return existing
 
-        dialect = self._session.get_bind().dialect.name
-        upsert = postgresql.insert if dialect == "postgresql" else sqlite.insert
         self._session.execute(
-            upsert(Ingredient)
+            _dialect_insert(self._session, Ingredient)
             .values(user_id=self._user_id, name=name)
             .on_conflict_do_nothing(
                 # The unique index `uq_ingredients_user_id_lower_name`.
@@ -569,4 +575,67 @@ class SessionRepository:
     def delete(self, token_hash: str) -> None:
         self._session.execute(
             delete(SessionRow).where(col(SessionRow.token_hash) == token_hash)
+        )
+
+
+class RateLimitRepository:
+    """Throttle buckets (app/ratelimit.py), one row per scope and subject."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get(
+        self, scope: str, subject: str, *, for_update: bool = False
+    ) -> RateLimit | None:
+        """The bucket, or None. With `for_update`, the row is created if
+        missing and then locked until the transaction ends, so concurrent
+        attempts are counted one after another instead of both reading the
+        same count. The created row has no hits, which reads like no row."""
+        if for_update:
+            self._session.execute(
+                _dialect_insert(self._session, RateLimit)
+                .values(
+                    scope=scope,
+                    subject=subject,
+                    hits=0,
+                    window_started_at=func.now(),
+                )
+                .on_conflict_do_nothing(index_elements=["scope", "subject"])
+            )
+        statement = select(RateLimit).where(
+            RateLimit.scope == scope, RateLimit.subject == subject
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        row = self._session.exec(statement.execution_options(populate_existing=True))
+        found = row.first()
+        if found is not None and found.hits == 0 and found.blocked_until is None:
+            return None
+        return found
+
+    def save(
+        self,
+        scope: str,
+        subject: str,
+        *,
+        hits: int,
+        window_started_at: datetime,
+        blocked_until: datetime | None,
+    ) -> None:
+        """Write a bucket whose row `get(..., for_update=True)` created."""
+        self._session.execute(
+            update(RateLimit)
+            .where(col(RateLimit.scope) == scope, col(RateLimit.subject) == subject)
+            .values(
+                hits=hits,
+                window_started_at=window_started_at,
+                blocked_until=blocked_until,
+            )
+        )
+
+    def delete(self, scope: str, subject: str) -> None:
+        self._session.execute(
+            delete(RateLimit).where(
+                col(RateLimit.scope) == scope, col(RateLimit.subject) == subject
+            )
         )

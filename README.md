@@ -62,6 +62,16 @@ unscoped, and someone else's meal answers 404, never 403.
   unknown or the password is wrong.
 - **Cross-site requests:** besides `SameSite=Strict`, any write whose
   `Origin` (or `Sec-Fetch-Site`) says another website sent it is refused.
+- **Throttling:** five wrong passwords for one account from one network
+  start a wait (1 minute, doubling to 15) during which even the right
+  password is refused; a higher ceiling per account catches guesses spread
+  across many networks without letting one attacker lock the owner out.
+  Guest sessions and "email already taken" answers are capped per network
+  per hour. Emails and IP addresses are stored only as keyed hashes, and
+  the address comes from the platform's header, never one a client can set.
+- **Security events:** signups, logins, failures, throttling and refused
+  cross-site requests are logged as JSON with the request id; passwords,
+  tokens, emails and IP addresses never are, and a test checks the logs.
 - **Row-level security:** in Postgres, the app connects as a role that can
   only see and write rows belonging to the user its request declared.
   Repositories filter by user, and the database filters again, so a query

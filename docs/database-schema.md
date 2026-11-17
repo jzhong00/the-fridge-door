@@ -1,6 +1,6 @@
 # Database schema
 
-Six tables. Everything a person creates is owned by one row in `users`, and
+Seven tables. Everything a person creates is owned by one row in `users`, and
 deleting that row deletes everything it owns. The conventions behind the
 names and constraints are in [conventions.md](conventions.md), and
 `tests/test_conventions.py` checks them.
@@ -55,6 +55,11 @@ erDiagram
 ```
 
 Every table also has `created_at` and `updated_at`, set by the database.
+
+`rate_limits` stands apart from the diagram: one row per throttled subject
+(`scope`, `subject`), where `subject` is a keyed hash of an email or network,
+never the value. It belongs to no user and references nothing. See
+app/ratelimit.py for the rules.
 
 ## Tables
 
