@@ -134,6 +134,13 @@ Tests: `web/src/hooks/usePlanner.test.ts`, `web/src/App.test.tsx`.
   docstring saying what changes, why, and how the upgrade can fail.
   Migrations that move data are tested with data
   (`tests/test_migrations.py`), not only from an empty database.
+- A database not on this machine is only migrated when named for that run:
+  set in the shell (`MEAL_PLANNER_DB_URL='...'`, single-quoted, since Neon
+  URLs contain `&`) or passed in by CI. A remote URL that `alembic` would
+  pick up from `.env` is refused, a dev server never auto-migrates one, and
+  every run logs its target first. Production changes go through the
+  approval-gated `migrate` workflow; a branch rehearsal starts with
+  `scripts/db_report.py` showing the branch's host.
 
 Tests: `tests/test_conventions.py` walks every table and checks all of the
 above. The schema itself is described in

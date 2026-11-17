@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import Engine, event
+from sqlalchemy.engine import make_url
 from sqlmodel import Session, SQLModel, create_engine
 
 # Registers the tables on SQLModel.metadata for create_tables().
@@ -44,6 +45,20 @@ def default_database_url() -> str:
 
     DEFAULT_DATA_DIR.mkdir(exist_ok=True)
     return f"sqlite:///{DEFAULT_DATA_DIR / 'data.db'}"
+
+
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def is_local_database(url: str) -> bool:
+    """Whether the database lives on this machine: SQLite, or a server on
+    localhost such as the Docker container or CI's service container.
+
+    Anything else (Neon, production or a branch) is shared, and is only
+    ever migrated when someone names it on purpose.
+    """
+    parsed = make_url(url)
+    return parsed.get_backend_name() == "sqlite" or parsed.host in _LOCAL_HOSTS
 
 
 def _enforce_sqlite_foreign_keys(engine: Engine) -> None:

@@ -5,16 +5,18 @@ MEAL_PLANNER_DB_URL, falling back to the local SQLite file, so `alembic`
 run by hand and the migration run at app startup can never disagree.
 """
 
+import logging
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import make_url
 from sqlmodel import SQLModel
 
 # Importing the models registers every table on SQLModel.metadata, which is
 # what autogenerate diffs the live database against.
 from app import models  # noqa: F401
-from app.db import default_database_url, load_env_file
+from app.migrations import resolve_migration_url
 
 config = context.config
 
@@ -24,13 +26,15 @@ if config.config_file_name is not None:
     # so the API's own error logging went quiet the moment it booted.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-load_env_file()
+# A URL handed over by app.migrations wins (before the attribute existed, a
+# URL passed to upgrade_to_head() was silently ignored), then the shell's
+# MEAL_PLANNER_DB_URL, then .env, which may only name a local database.
+_url = resolve_migration_url(config.attributes.get("database_url"))
 
-# A URL handed over by app.migrations wins; otherwise this is the alembic
-# CLI, which targets whatever the app targets. Before the attribute existed,
-# a URL passed to upgrade_to_head() was silently ignored in favour of the
-# environment variable.
-_url = config.attributes.get("database_url") or default_database_url()
+# Every run says which database it is about to change, before changing it.
+logging.getLogger("alembic.env").info(
+    "Target database: %s", make_url(_url).render_as_string(hide_password=True)
+)
 
 # configparser treats % as interpolation syntax, and Postgres passwords are
 # percent-encoded, so any literal % has to be escaped before being stored.
