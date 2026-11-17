@@ -9,27 +9,22 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import is_local_database
 from app.migrations import upgrade_to_head
 from server.deps import get_database
 from server.observability import RequestContextMiddleware, configure_logging
+from server.origin import reject_cross_site_writes, trusted_origins
 from server.problems import (
     UnexpectedErrorMiddleware,
     document_problem_responses,
     install_problem_handlers,
 )
-from server.routers import health, meals, plans, state
+from server.routers import auth, health, meals, plans, state
 
 configure_logging()
-
-#: Comma-separated origins allowed to call the API. The deployed frontend's
-#: URL goes here; localhost defaults cover development.
-CORS_ORIGINS_ENV_VAR = "MEAL_PLANNER_CORS_ORIGINS"
-_DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
-
 
 #: Whether to apply migrations at startup. Sensible for a long-lived server,
 #: wrong for serverless: every cold start would re-check the schema, and two
@@ -62,15 +57,13 @@ app = FastAPI(
     version="1.0.0",
     summary="Plan a week of meals and get a consolidated grocery list.",
     lifespan=lifespan,
+    # Every route: refuse writes another website sends (server/origin.py).
+    dependencies=[Depends(reject_cross_site_writes)],
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        origin.strip()
-        for origin in os.getenv(CORS_ORIGINS_ENV_VAR, _DEFAULT_ORIGINS).split(",")
-        if origin.strip()
-    ],
+    allow_origins=trusted_origins(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,6 +80,7 @@ install_problem_handlers(app)
 document_problem_responses(app)
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(state.router)
 app.include_router(meals.router)
 app.include_router(plans.router)

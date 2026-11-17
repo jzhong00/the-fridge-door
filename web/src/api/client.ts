@@ -40,14 +40,50 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+const NOT_SIGNED_IN = "urn:meal-planner:problem:not-signed-in";
+
+let guestSession: Promise<void> | null = null;
+
+/**
+ * Start a guest session: a real account with no email or password, so a
+ * first visit lands in a working planner instead of a sign-in wall.
+ *
+ * Shared by every request that finds itself signed out at the same moment,
+ * so a page load firing several requests starts one session, not one each.
+ * A request arriving just after it finishes already carries the new cookie,
+ * and the server answers that with the same account rather than another.
+ */
+function startGuestSession(): Promise<void> {
+  guestSession ??= fetch("/api/auth/guest", { method: "POST" })
+    .then(async (response) => {
+      if (!response.ok) throw await toApiError(response);
+    })
+    .finally(() => {
+      guestSession = null;
+    });
+  return guestSession;
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  { retried = false }: { retried?: boolean } = {},
+): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
 
   if (!response.ok) {
-    throw await toApiError(response);
+    const error = await toApiError(response);
+    // Signed out (first visit, or a session that expired): start a guest
+    // session and try once more. Never for the sign-in routes themselves,
+    // and never twice, so a server that keeps refusing cannot cause a loop.
+    if (error.type === NOT_SIGNED_IN && !retried && !path.startsWith("/api/auth/")) {
+      await startGuestSession();
+      return request<T>(path, init, { retried: true });
+    }
+    throw error;
   }
 
   // 204 No Content has no body to parse.

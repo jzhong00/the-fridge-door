@@ -26,6 +26,7 @@ from functools import cache
 from argon2 import PasswordHasher, profiles
 from argon2.exceptions import VerifyMismatchError
 
+from app.common_passwords import COMMON_PASSWORDS
 from app.exceptions import WeakPasswordError
 
 # --- Passwords ---------------------------------------------------------------
@@ -37,8 +38,9 @@ from app.exceptions import WeakPasswordError
 #: them, so they are upgraded at the user's next login.
 PASSWORD_PARAMETERS = profiles.RFC_9106_LOW_MEMORY
 
-#: Length is the only rule. No "one uppercase, one symbol" rules, because
-#: they push people towards predictable patterns (NIST SP 800-63B). The
+#: Length, plus refusing the most common passwords (`check_password_policy`).
+#: No "one uppercase, one symbol" rules, because they push people towards
+#: predictable patterns like "Password1!" (NIST SP 800-63B). The
 #: minimum is OWASP ASVS's floor. The maximum is generous enough for any
 #: passphrase or password manager and stops a megabyte "password" from
 #: becoming a way to keep the server hashing.
@@ -59,9 +61,17 @@ def _normalise(password: str) -> str:
     return unicodedata.normalize("NFKC", password)
 
 
-def check_password_policy(password: str) -> None:
-    """Raise WeakPasswordError if the password is not acceptable for signup."""
-    length = len(_normalise(password))
+def check_password_policy(password: str, *, email: str | None = None) -> None:
+    """Raise WeakPasswordError if the password is not acceptable for signup.
+
+    Beyond length, two things NIST SP 800-63B says to refuse: a password on
+    a list of ones attackers try first (the 10,000 most common in breach
+    data, `app/common_passwords.py`), and one made from the account's own
+    details. Both compare case-insensitively: "Password1" is guessed just as
+    early as "password1".
+    """
+    normalised = _normalise(password)
+    length = len(normalised)
     if length < MIN_PASSWORD_LENGTH:
         raise WeakPasswordError(
             f"Use at least {MIN_PASSWORD_LENGTH} characters for your password."
@@ -70,6 +80,16 @@ def check_password_policy(password: str) -> None:
         raise WeakPasswordError(
             f"Use at most {MAX_PASSWORD_LENGTH} characters for your password."
         )
+
+    folded = normalised.casefold()
+    if folded in COMMON_PASSWORDS:
+        raise WeakPasswordError(
+            "That password is one of the most common, so it is among the first "
+            "an attacker would try. Choose something less predictable; a few "
+            "unrelated words together work well."
+        )
+    if email and folded in {email.casefold(), email.casefold().partition("@")[0]}:
+        raise WeakPasswordError("Use a password that isn't your email address.")
 
 
 def hash_password(password: str) -> str:

@@ -23,11 +23,17 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.exceptions import (
+    AlreadySignedUpError,
+    CrossSiteRequestError,
     DuplicateNameError,
+    EmailTakenError,
     IngredientNotOnMealError,
+    InvalidCredentialsError,
     InvalidDayError,
+    InvalidEmailError,
     MealNotFoundError,
     MealPlannerError,
+    NotSignedInError,
     UnitMismatchError,
     WeakPasswordError,
 )
@@ -95,6 +101,12 @@ _DOMAIN_ERRORS: dict[type[MealPlannerError], tuple[int, str]] = {
     UnitMismatchError: (409, "unit-mismatch"),
     InvalidDayError: (422, "invalid-day"),
     WeakPasswordError: (422, "weak-password"),
+    InvalidEmailError: (422, "invalid-email"),
+    NotSignedInError: (401, "not-signed-in"),
+    InvalidCredentialsError: (401, "invalid-credentials"),
+    CrossSiteRequestError: (403, "cross-site-request"),
+    EmailTakenError: (409, "email-taken"),
+    AlreadySignedUpError: (409, "already-signed-up"),
 }
 
 #: Shown for any validation failure. Field-level reasons are in

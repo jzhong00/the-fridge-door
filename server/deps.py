@@ -1,26 +1,36 @@
-"""Shared dependencies: the database and the repositories over it."""
+"""Shared dependencies: the request's transaction, who is asking, and the
+repositories over both."""
 
 from __future__ import annotations
 
 from collections.abc import Generator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
+from sqlmodel import Session
 
+from app.auth import AuthService, CurrentUser
 from app.db import Database, load_env_file
+from app.exceptions import NotSignedInError
 from app.repositories import (
     IngredientRepository,
     MealRepository,
-    UserRepository,
     WeeklyPlanRepository,
 )
+
+#: The session cookie. The `__Host-` prefix makes the browser refuse it
+#: unless it is Secure, has Path=/ and no Domain, so nothing on another
+#: subdomain can set or overwrite it.
+SESSION_COOKIE = "__Host-session"
 
 
 @dataclass(frozen=True, slots=True)
 class Services:
-    """Everything a route handler needs to read or change data."""
+    """Everything a route handler needs to read or change data, already
+    scoped to the signed-in user."""
 
     meals: MealRepository
     ingredients: IngredientRepository
@@ -39,39 +49,67 @@ def get_database() -> Database:
     return Database()
 
 
-def get_services() -> Generator[Services]:
-    """FastAPI dependency: one transaction per request, and the repositories
-    that work inside it.
+def get_transaction() -> Generator[Session]:
+    """One transaction per request, shared by everything the request does.
 
-    Everything a request does commits together or not at all. A route that
-    raises (a domain error included) rolls back whatever it had written,
-    and one BEGIN/COMMIT per request rather than per repository saved about
-    1.5 s of a 3.4 s week change against a database a network away.
+    Everything a request does commits together or not at all: a route that
+    raises, a domain error included, rolls back whatever it had written. One
+    BEGIN/COMMIT per request rather than per repository saved about 1.5 s of
+    a 3.4 s week change against a database a network away.
     """
     with get_database().transaction() as session:
-        # TEMPORARY (Phase 1, step 4 replaces it with the session's user):
-        # every request acts as the account that owns the pre-accounts data,
-        # so the app behaves as the single-user app it was until then.
-        user_id = UserRepository(session).unclaimed_owner_id()
-        yield Services(
-            meals=MealRepository(session, user_id=user_id),
-            ingredients=IngredientRepository(session, user_id=user_id),
-            plans=WeeklyPlanRepository(session, user_id=user_id),
-        )
+        yield session
 
 
-#: What route handlers annotate their `services` parameter with.
-#:
 #: `scope="function"` makes the transaction commit when the route returns,
 #: before the response is sent. FastAPI's default scope finishes yield
 #: dependencies after the response has gone out, so a commit that failed
 #: there (a dropped connection, a constraint checked at commit) would
 #: already have told the client 200 for a write that never happened.
 #: tests/test_transactions.py proves the difference.
-#:
+TransactionDep = Annotated[Session, Depends(get_transaction, scope="function")]
+
+
+def get_auth(session: TransactionDep) -> AuthService:
+    return AuthService(session, now=datetime.now(UTC))
+
+
+AuthDep = Annotated[AuthService, Depends(get_auth)]
+
+
+def get_current_user(request: Request, auth: AuthDep) -> CurrentUser:
+    """The signed-in user, or 401 not-signed-in."""
+    return auth.authenticate(request.cookies.get(SESSION_COOKIE))
+
+
+def get_optional_user(request: Request, auth: AuthDep) -> CurrentUser | None:
+    """The signed-in user, or None: for the auth routes, which work either
+    way."""
+    try:
+        return get_current_user(request, auth)
+    except NotSignedInError:
+        return None
+
+
+CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
+OptionalUserDep = Annotated[CurrentUser | None, Depends(get_optional_user)]
+
+
+def get_services(session: TransactionDep, user: CurrentUserDep) -> Services:
+    """The repositories for this request, bound to its user. Requiring this
+    is what makes a route need a session: there is no way to get
+    repositories without one."""
+    return Services(
+        meals=MealRepository(session, user_id=user.id),
+        ingredients=IngredientRepository(session, user_id=user.id),
+        plans=WeeklyPlanRepository(session, user_id=user.id),
+    )
+
+
+#: What route handlers annotate their `services` parameter with.
 #: Annotated rather than a `Depends()` default, which FastAPI still accepts
 #: but which evaluates a call at import time and reads as a mutable default.
-ServicesDep = Annotated[Services, Depends(get_services, scope="function")]
+ServicesDep = Annotated[Services, Depends(get_services)]
 
 
 def reset_services_cache() -> None:

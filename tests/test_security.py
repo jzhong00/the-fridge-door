@@ -132,9 +132,9 @@ def test_a_corrupt_stored_hash_fails_loudly() -> None:
 @pytest.mark.parametrize(
     "password",
     [
-        "a" * MIN_PASSWORD_LENGTH,
+        "tq9vmz4w",  # exactly the minimum
         "a" * MAX_PASSWORD_LENGTH,
-        "password",  # composition rules are deliberately absent
+        "spoonsfornorthwind",  # no digits or symbols: composition rules are absent
         "ぱすわーどですよ",  # length is counted in characters, not bytes
         "🥕🥔🧅🍅🌶🥦🍆🧄",
     ],
@@ -206,3 +206,35 @@ def test_the_token_hash_matches_a_published_sha256_vector() -> None:
 def test_any_cookie_a_client_sends_hashes_without_error(cookie: str) -> None:
     # A tampered or malformed cookie simply matches no session row.
     assert len(hash_session_token(cookie)) == 64
+
+
+@pytest.mark.parametrize(
+    "password", ["password", "Password1", "PASSWORD1", "iloveyou", "qwertyuiop"]
+)
+def test_the_most_common_passwords_are_refused_whatever_their_case(
+    password: str,
+) -> None:
+    with pytest.raises(WeakPasswordError, match="most common"):
+        check_password_policy(password)
+
+
+def test_every_listed_password_passes_the_length_rule_so_the_list_is_not_dead_weight() -> (
+    None
+):
+    from app.common_passwords import COMMON_PASSWORDS
+
+    assert len(COMMON_PASSWORDS) == 10_000
+    assert all(
+        MIN_PASSWORD_LENGTH <= len(entry) <= MAX_PASSWORD_LENGTH
+        for entry in COMMON_PASSWORDS
+    )
+
+
+@pytest.mark.parametrize("password", ["riley.cooks@example.com", "Riley.Cooks"])
+def test_a_password_made_of_the_email_is_refused(password: str) -> None:
+    with pytest.raises(WeakPasswordError, match="email"):
+        check_password_policy(password, email="riley.cooks@example.com")
+
+
+def test_a_password_merely_containing_a_common_word_is_fine() -> None:
+    check_password_policy("password lettuce harbour", email="cook@example.com")

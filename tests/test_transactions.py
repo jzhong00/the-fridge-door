@@ -11,6 +11,7 @@ import threading
 import time
 
 import pytest
+from api_client import api_client
 from fastapi.testclient import TestClient
 from sqlalchemy import event, text
 from sqlalchemy.exc import InvalidRequestError
@@ -18,8 +19,6 @@ from sqlalchemy.orm import Session as OrmSession
 
 from app.db import Database
 from app.repositories import IngredientRepository, MealRepository
-from server.deps import reset_services_cache
-from server.main import app
 
 
 class _Abandon(Exception):
@@ -28,10 +27,8 @@ class _Abandon(Exception):
 
 @pytest.fixture
 def client(db):
-    reset_services_cache()
-    with TestClient(app, raise_server_exceptions=False) as test_client:
+    with api_client(raise_server_exceptions=False) as test_client:
         yield test_client
-    reset_services_cache()
 
 
 # --- Repositories never decide the outcome ------------------------------------

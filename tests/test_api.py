@@ -9,11 +9,9 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import pytest
-from fastapi.testclient import TestClient
+from api_client import api_client
 
 from app.templates import MEAL_TEMPLATES
-from server.deps import reset_services_cache
-from server.main import app
 
 MONDAY = date(2026, 8, 3)
 WEDNESDAY = MONDAY + timedelta(days=2)
@@ -21,15 +19,9 @@ WEDNESDAY = MONDAY + timedelta(days=2)
 
 @pytest.fixture
 def client(db):
-    """A client bound to the per-test database.
-
-    The `db` fixture sets MEAL_PLANNER_DB_URL; clearing the cached engine
-    makes the API pick it up instead of a previous test's database.
-    """
-    reset_services_cache()
-    with TestClient(app) as test_client:
+    """A guest's client, bound to the per-test database."""
+    with api_client() as test_client:
         yield test_client
-    reset_services_cache()
 
 
 def _create_meal(client, name="Spaghetti", servings=4) -> dict:

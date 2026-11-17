@@ -160,3 +160,23 @@ class AppState(ResponseSchema):
     ingredient_names: list[str]
     plan: list[DayAssignment]
     templates: list[TemplateRead]
+
+
+class Credentials(RequestSchema):
+    """An email and password, for signup and login.
+
+    The bounds here only keep request bodies sane. The rules a password must
+    meet at signup are checked in app/security.py, which can say exactly
+    what is wrong, rather than with a generic validation error.
+    """
+
+    email: str = Field(min_length=1, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class Account(ResponseSchema):
+    """Who is signed in. No id: the client never needs it, and a numeric id
+    would tell anyone signing up roughly how many accounts exist."""
+
+    email: str | None
+    is_guest: bool

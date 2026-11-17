@@ -49,7 +49,19 @@ Tests: `tests/test_openapi_contract.py`.
 
 **HTTP semantics.** Creating returns `201 Created` with a `Location` header
 that can be fetched. Deleting returns `204` with no body. Asking for a row
-that does not exist (or, after accounts, belongs to someone else) is a `404`.
+that does not exist, or that belongs to someone else, is a `404`.
+
+**Who is asking.** Every data route takes `ServicesDep`, which requires a
+signed-in user and hands back repositories bound to them; there is no other
+way to get repositories, so a route cannot forget authentication. A route
+that works signed in or out (only the auth routes) takes `OptionalUserDep`.
+Without a session the answer is `401 not-signed-in`, which the frontend
+answers by starting a guest session and retrying once. Writes from other
+websites are refused app-wide by `server/origin.py`. Account rules (tokens,
+expiry, rotation, password checks) live in `app/auth.py` and
+`app/security.py`, never in route handlers.
+Tests: `tests/test_auth.py` sweeps every route in the OpenAPI document for
+a 401 without a session.
 
 ## Observability
 

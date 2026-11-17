@@ -12,12 +12,10 @@ import json
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
+from api_client import api_client
 
 from app.db import Database
 from app.repositories import MealRepository
-from server.deps import reset_services_cache
-from server.main import app
 from server.observability import configure_logging
 from server.routers import health
 
@@ -26,10 +24,8 @@ PROBLEM_JSON = "application/problem+json"
 
 @pytest.fixture
 def client(db):
-    reset_services_cache()
-    with TestClient(app, raise_server_exceptions=False) as test_client:
+    with api_client(raise_server_exceptions=False) as test_client:
         yield test_client
-    reset_services_cache()
 
 
 @pytest.fixture
