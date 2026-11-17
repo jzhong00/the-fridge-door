@@ -9,4 +9,5 @@
 sqlmodel==0.0.37
 psycopg[binary]==3.3.4
 alembic==1.19.1
+argon2-cffi==25.1.0
 fastapi==0.141.1

@@ -29,6 +29,7 @@ from app.exceptions import (
     MealNotFoundError,
     MealPlannerError,
     UnitMismatchError,
+    WeakPasswordError,
 )
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -93,6 +94,7 @@ _DOMAIN_ERRORS: dict[type[MealPlannerError], tuple[int, str]] = {
     DuplicateNameError: (409, "duplicate-name"),
     UnitMismatchError: (409, "unit-mismatch"),
     InvalidDayError: (422, "invalid-day"),
+    WeakPasswordError: (422, "weak-password"),
 }
 
 #: Shown for any validation failure. Field-level reasons are in
