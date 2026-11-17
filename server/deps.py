@@ -13,6 +13,7 @@ from app.db import Database, load_env_file
 from app.repositories import (
     IngredientRepository,
     MealRepository,
+    UserRepository,
     WeeklyPlanRepository,
 )
 
@@ -49,11 +50,15 @@ def get_services() -> Generator[Services]:
     """
     db = get_database()
     with db.session() as session:
+        # TEMPORARY (Phase 1, step 4 replaces it with the session's user):
+        # every request acts as the account that owns the pre-accounts data,
+        # so the app behaves as the single-user app it was until then.
+        user_id = UserRepository(db, session).unclaimed_owner_id()
         yield Services(
             db=db,
-            meals=MealRepository(db, session),
-            ingredients=IngredientRepository(db, session),
-            plans=WeeklyPlanRepository(db, session),
+            meals=MealRepository(db, session, user_id=user_id),
+            ingredients=IngredientRepository(db, session, user_id=user_id),
+            plans=WeeklyPlanRepository(db, session, user_id=user_id),
         )
 
 

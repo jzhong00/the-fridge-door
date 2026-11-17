@@ -7,7 +7,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, event
 from sqlmodel import Session, SQLModel, create_engine
 
 # Registers the tables on SQLModel.metadata for create_tables().
@@ -46,6 +46,23 @@ def default_database_url() -> str:
     return f"sqlite:///{DEFAULT_DATA_DIR / 'data.db'}"
 
 
+def _enforce_sqlite_foreign_keys(engine: Engine) -> None:
+    """Make SQLite enforce foreign keys, as Postgres always does.
+
+    SQLite ignores them unless asked, per connection. Without this, local
+    development and the SQLite test leg would accept rows pointing at
+    nothing and skip every ON DELETE action, so behaviour would differ from
+    production exactly where it matters. Alembic uses its own engine, so
+    migrations that rebuild tables are unaffected.
+    """
+
+    @event.listens_for(engine, "connect")
+    def _on_connect(dbapi_connection, _record) -> None:  # pyright: ignore[reportUnusedFunction]
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
 class Database:
     """Owns an engine and hands out transactional sessions.
 
@@ -69,6 +86,8 @@ class Database:
             options["connect_args"] = {"connect_timeout": 10}
 
         self._engine = create_engine(self.url, echo=echo, **options)
+        if self.is_sqlite:
+            _enforce_sqlite_foreign_keys(self._engine)
 
     @property
     def is_sqlite(self) -> bool:

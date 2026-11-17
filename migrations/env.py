@@ -26,9 +26,15 @@ if config.config_file_name is not None:
 
 load_env_file()
 
+# A URL handed over by app.migrations wins; otherwise this is the alembic
+# CLI, which targets whatever the app targets. Before the attribute existed,
+# a URL passed to upgrade_to_head() was silently ignored in favour of the
+# environment variable.
+_url = config.attributes.get("database_url") or default_database_url()
+
 # configparser treats % as interpolation syntax, and Postgres passwords are
 # percent-encoded, so any literal % has to be escaped before being stored.
-config.set_main_option("sqlalchemy.url", default_database_url().replace("%", "%%"))
+config.set_main_option("sqlalchemy.url", _url.replace("%", "%%"))
 
 target_metadata = SQLModel.metadata
 

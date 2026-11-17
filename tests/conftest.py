@@ -23,6 +23,7 @@ from app.migrations import stamp_head
 from app.repositories import (
     IngredientRepository,
     MealRepository,
+    UserRepository,
     WeeklyPlanRepository,
 )
 from server.deps import reset_services_cache
@@ -73,15 +74,27 @@ def db(tmp_path, monkeypatch) -> Database:
 
 
 @pytest.fixture
-def meals(db: Database) -> MealRepository:
-    return MealRepository(db)
+def user_id(db: Database) -> int:
+    """The account the repository fixtures act as."""
+    return UserRepository(db).create(is_guest=False).id or 0
 
 
 @pytest.fixture
-def ingredients(db: Database) -> IngredientRepository:
-    return IngredientRepository(db)
+def other_user_id(db: Database) -> int:
+    """A second account, for proving one cannot see the other's data."""
+    return UserRepository(db).create(is_guest=False).id or 0
 
 
 @pytest.fixture
-def plans(db: Database) -> WeeklyPlanRepository:
-    return WeeklyPlanRepository(db)
+def meals(db: Database, user_id: int) -> MealRepository:
+    return MealRepository(db, user_id=user_id)
+
+
+@pytest.fixture
+def ingredients(db: Database, user_id: int) -> IngredientRepository:
+    return IngredientRepository(db, user_id=user_id)
+
+
+@pytest.fixture
+def plans(db: Database, user_id: int) -> WeeklyPlanRepository:
+    return WeeklyPlanRepository(db, user_id=user_id)
