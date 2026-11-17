@@ -334,8 +334,20 @@ class WeeklyPlanRepository(_Repository):
         # Coerced rather than trusted: the column is a plain string, so an
         # unchecked value here becomes a row nothing can render.
         wanted = {_as_day(day): value for day, value in assignments.items()}
+        meal_ids = {meal_id for meal_id, _ in wanted.values() if meal_id is not None}
 
         with self._session() as session:
+            # Checked up front rather than left to the foreign key: SQLite
+            # would store a dangling id, and Postgres would reject it with
+            # an IntegrityError that reads as a 500 instead of a 404.
+            if meal_ids:
+                found = set(
+                    session.exec(select(Meal.id).where(col(Meal.id).in_(meal_ids)))
+                )
+                missing = sorted(meal_ids - found)
+                if missing:
+                    raise MealNotFoundError(f"No meal with id {missing[0]}.")
+
             # Replace rather than read-then-update: eight round trips for
             # a week becomes two. Row ids are referenced nowhere. Cleared
             # days keep a row with a NULL meal_id, distinguishing them from

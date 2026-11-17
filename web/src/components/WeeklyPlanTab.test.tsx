@@ -172,6 +172,45 @@ describe("the week grid", () => {
     expect(screen.getByLabelText("Serves")).toHaveValue(2);
   });
 
+  it("lets the servings field be cleared and retyped", async () => {
+    // Regression test: the field coerced to a number on every keystroke, so
+    // clearing it snapped back to 1 and typing "4" produced "14".
+    const user = userEvent.setup();
+    const { props } = renderTab({
+      state: makeState({
+        meals: [spaghetti],
+        plan: [{ day: "Monday", meal_id: 1, servings: 2 }],
+      }),
+    });
+
+    const field = screen.getByLabelText("Serves");
+    await user.clear(field);
+    await user.type(field, "4");
+    expect(field).toHaveValue(4);
+
+    await user.click(screen.getByRole("button", { name: "Save plan" }));
+    const monday = (props.onSave.mock.calls[0][0] as DayAssignment[]).find(
+      (d) => d.day === "Monday",
+    );
+    expect(monday?.servings).toBe(4);
+  });
+
+  it("restores the last valid servings when the field is left empty", async () => {
+    const user = userEvent.setup();
+    renderTab({
+      state: makeState({
+        meals: [spaghetti],
+        plan: [{ day: "Monday", meal_id: 1, servings: 2 }],
+      }),
+    });
+
+    const field = screen.getByLabelText("Serves");
+    await user.clear(field);
+    await user.tab();
+
+    expect(field).toHaveValue(2);
+  });
+
   it("copies the previous week on request", async () => {
     const user = userEvent.setup();
     const { props } = renderTab();

@@ -19,7 +19,10 @@ from app.db import default_database_url, load_env_file
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Without disable_existing_loggers=False this silences every logger
+    # created before it runs, and the server runs migrations at startup,
+    # so the API's own error logging went quiet the moment it booted.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 load_env_file()
 

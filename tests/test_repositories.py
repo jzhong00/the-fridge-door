@@ -235,6 +235,28 @@ def test_set_day_updates_the_existing_day_rather_than_duplicating(meals, plans):
     assert monday[0].meal_id == second.id
 
 
+def test_set_week_rejects_a_meal_that_does_not_exist(meals, plans):
+    """Regression test: the id was written unchecked. SQLite stored it,
+    leaving a day pointing at nothing; Postgres raised on the foreign key,
+    which surfaced as a 500 rather than a 404."""
+    real = meals.add("Spaghetti")
+
+    with pytest.raises(MealNotFoundError):
+        plans.set_week(
+            WEEK_1,
+            {DayOfWeek.MONDAY: (real.id, None), DayOfWeek.TUESDAY: (999, None)},
+        )
+
+    # Nothing from the rejected write lands, not even the valid day.
+    assert plans.get_week(WEEK_1) == []
+
+
+def test_set_week_accepts_cleared_days_without_a_meal(plans):
+    plans.set_week(WEEK_1, {DayOfWeek.MONDAY: (None, None)})
+
+    assert [p.meal_id for p in plans.get_week(WEEK_1)] == [None]
+
+
 def test_set_day_is_scoped_to_its_week(meals, plans):
     first = meals.add("Spaghetti")
     second = meals.add("Chicken Stir Fry")

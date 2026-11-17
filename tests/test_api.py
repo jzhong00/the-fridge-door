@@ -6,11 +6,14 @@ so routing, validation, serialisation and error mapping are all covered.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
+from app.repositories import MealRepository
 from app.templates import MEAL_TEMPLATES
 from server.deps import reset_services_cache
 from server.main import app
@@ -324,3 +327,67 @@ def test_a_day_that_is_not_a_weekday_is_rejected(client, day):
 
     assert response.status_code == 422
     assert client.get(f"/api/plan/{MONDAY}").json()["days"] == []
+
+
+def test_planning_a_meal_that_does_not_exist_is_a_404(client):
+    response = client.put(
+        f"/api/plan/{MONDAY}",
+        json={"days": [{"day": "Monday", "meal_id": 999, "servings": 2}]},
+    )
+
+    assert response.status_code == 404
+    assert client.get(f"/api/plan/{MONDAY}").json()["days"] == []
+
+
+# ------------------------------------------------------ unexpected errors
+
+
+@pytest.fixture
+def lenient_client(db):
+    """A client that returns the server's 500 response instead of raising
+    the exception into the test, so the error handler itself is exercised."""
+    reset_services_cache()
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        yield test_client
+    reset_services_cache()
+
+
+def test_an_unexpected_error_is_a_generic_500_and_is_logged(
+    lenient_client, monkeypatch, caplog
+):
+    def explode(self):
+        raise RuntimeError("secret internal detail")
+
+    monkeypatch.setattr(MealRepository, "list_all_with_ingredients", explode)
+
+    with caplog.at_level(logging.ERROR, logger="meal_planner.api"):
+        response = lenient_client.get("/api/meals")
+
+    assert response.status_code == 500
+    # Internals never reach the client, but the client still gets JSON it
+    # can show, in the same shape as every other error.
+    assert "secret internal detail" not in response.text
+    assert isinstance(response.json()["detail"], str)
+
+    logged = [r for r in caplog.records if r.name == "meal_planner.api"]
+    assert logged, "the failure was not logged"
+    assert "GET /api/meals" in logged[0].getMessage()
+    assert logged[0].exc_info is not None
+
+
+def test_a_database_integrity_error_is_a_409(lenient_client, monkeypatch, caplog):
+    """A constraint the application did not check for first, such as two
+    requests racing to create the same name, is a conflict rather than a
+    crash."""
+
+    def collide(self, name, servings=1):
+        raise IntegrityError("INSERT ...", {}, Exception("duplicate key"))
+
+    monkeypatch.setattr(MealRepository, "add", collide)
+
+    with caplog.at_level(logging.WARNING, logger="meal_planner.api"):
+        response = lenient_client.post("/api/meals", json={"name": "Tacos"})
+
+    assert response.status_code == 409
+    assert "duplicate key" not in response.text
+    assert any(r.name == "meal_planner.api" for r in caplog.records)

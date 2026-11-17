@@ -190,18 +190,61 @@ function DayRow({
             >
               Serves
             </Label>
-            <Input
+            <ServingsInput
               id={`servings-${day}`}
-              type="number"
-              min={1}
-              value={assignment.servings ?? ""}
-              onChange={(e) => onChange({ servings: Math.max(1, +e.target.value) })}
-              className="h-9 w-16"
+              servings={assignment.servings}
+              onChange={(servings) => onChange({ servings })}
             />
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * A servings field that holds what is typed as text, and only reports a
+ * whole number of at least 1. Coercing on every keystroke meant the field
+ * could not be cleared: it snapped to 1, so typing "4" gave "14".
+ */
+function ServingsInput({
+  id,
+  servings,
+  onChange,
+}: {
+  id: string;
+  servings: number | null;
+  onChange: (servings: number) => void;
+}) {
+  const shown = servings === null ? "" : String(servings);
+  const [text, setText] = useState(shown);
+
+  // Follow changes made elsewhere, such as picking a different meal.
+  // Adjusted during render, as with the draft above, so no stale frame.
+  const [syncedFrom, setSyncedFrom] = useState(servings);
+  if (syncedFrom !== servings) {
+    setSyncedFrom(servings);
+    setText(shown);
+  }
+
+  return (
+    <Input
+      id={id}
+      type="number"
+      min={1}
+      step={1}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const parsed = Number(e.target.value);
+        if (e.target.value !== "" && Number.isInteger(parsed) && parsed >= 1) {
+          onChange(parsed);
+        }
+      }}
+      // Leaving the field blank or invalid puts the last good value back.
+      onBlur={() => setText(shown)}
+      className="h-9 w-16"
+    />
   );
 }
 
