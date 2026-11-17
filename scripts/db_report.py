@@ -36,7 +36,14 @@ TABLES = (
 def main() -> int:
     url = os.getenv("MEAL_PLANNER_DB_URL")
     if not url:
-        print("Set MEAL_PLANNER_DB_URL to the database to report on.", file=sys.stderr)
+        print(
+            "MEAL_PLANNER_DB_URL is not set in this shell. Stop here: do not run "
+            "alembic until this prints the database you mean. If you ran "
+            "`export MEAL_PLANNER_DB_URL=...`, put the URL in single quotes; "
+            "unquoted, the & in it makes the shell run the export in the "
+            "background, where it is lost.",
+            file=sys.stderr,
+        )
         return 1
 
     engine = create_engine(url)

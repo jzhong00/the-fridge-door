@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.db import is_local_database
 from app.migrations import upgrade_to_head
 from server.deps import get_database
 from server.observability import RequestContextMiddleware, configure_logging
@@ -37,19 +38,22 @@ _DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 AUTO_MIGRATE_ENV_VAR = "MEAL_PLANNER_AUTO_MIGRATE"
 
 
-def _auto_migrate_enabled() -> bool:
+def _auto_migrate_enabled(url: str) -> bool:
     configured = os.getenv(AUTO_MIGRATE_ENV_VAR)
     if configured is not None:
         return configured.lower() == "true"
-    # Vercel sets this for every deployment; default off there.
-    return os.getenv("VERCEL") is None
+    # Off on Vercel (VERCEL is set for every deployment), and off for any
+    # database not on this machine: a dev server started on a feature branch
+    # with .env pointing at production would otherwise migrate production.
+    return os.getenv("VERCEL") is None and is_local_database(url)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Bring the schema up to date once, before serving any request."""
-    if _auto_migrate_enabled():
-        upgrade_to_head(get_database().url)
+    url = get_database().url
+    if _auto_migrate_enabled(url):
+        upgrade_to_head(url)
     yield
 
 
