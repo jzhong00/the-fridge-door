@@ -95,6 +95,14 @@ Tests: `web/src/hooks/usePlanner.test.ts`, `web/src/App.test.tsx`.
 - Schema changes go through Alembic migrations only, reviewed by hand in
   both directions. CI applies every migration to an empty Postgres, runs
   `alembic check`, and downgrades to base.
+- Production is migrated only by the `Migrate production` workflow, after
+  approval, over Neon's direct connection rather than the pooler. Vercel
+  deploys a push without waiting for it, so a migration must be safe for the
+  code already running: additive changes are; anything else needs
+  expand/migrate/contract (add, backfill and dual-write, then remove in a
+  later release) or an agreed maintenance window.
+- Dependencies update weekly through Dependabot, held back until a release
+  is two weeks old.
 - One transaction per request, opened in `server/deps.py`.
 - Queries are SQLAlchemy constructs, never string-built SQL.
 - Reads that need related rows use explicit joins; there are no ORM

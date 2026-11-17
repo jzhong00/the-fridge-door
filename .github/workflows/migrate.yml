@@ -1,0 +1,76 @@
+name: Migrate production
+
+# Applies Alembic migrations to the production database. The app never
+# migrates itself on Vercel (every cold start would re-check the schema, and
+# concurrent functions could race), so this is the one release step that
+# changes the schema.
+#
+# It runs when a push to main changes the migration history, or by hand.
+# The `production` environment requires Riley's approval before the job
+# starts: approve it once the Tests workflow for the same commit is green.
+#
+# Order relative to the Vercel deploy: Vercel deploys the push immediately,
+# and this waits for approval. That is safe for additive migrations, which
+# old code ignores. A migration the running code cannot tolerate needs the
+# expand/migrate/contract sequence in docs/conventions.md, or an accepted
+# maintenance window, decided before merging.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "migrations/**"
+      - "alembic.ini"
+  workflow_dispatch:
+
+# Never two migration runs at once, and never cancel one half way.
+concurrency:
+  group: production-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: alembic upgrade head
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      # The direct (non-pooled) Neon connection string, with the driver
+      # prefix: postgresql+psycopg://... Kept separate from the app's pooled
+      # URL so DDL never goes through the connection pooler.
+      MEAL_PLANNER_DB_URL: ${{ secrets.MEAL_PLANNER_MIGRATION_DB_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Without a URL the app falls back to a local SQLite file, so a missing
+      # or mistyped secret would "migrate" an empty file on this runner and
+      # report success. Refuse anything that is not Postgres.
+      - name: Check the target is Postgres
+        run: |
+          case "$MEAL_PLANNER_DB_URL" in
+            postgresql+psycopg://*) echo "Target: Postgres" ;;
+            "") echo "::error::MEAL_PLANNER_MIGRATION_DB_URL is not set on the production environment"; exit 1 ;;
+            *) echo "::error::MEAL_PLANNER_MIGRATION_DB_URL must start with postgresql+psycopg://"; exit 1 ;;
+          esac
+
+      - name: Show the current revision and what will run
+        run: |
+          alembic current
+          alembic history --indicate-current | head -20
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - name: Confirm production is at head
+        run: |
+          alembic current
+          test "$(alembic current 2>/dev/null | awk '{print $1}')" = "$(alembic heads | awk '{print $1}')"

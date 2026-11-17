@@ -197,9 +197,14 @@ alembic revision --autogenerate -m "what changed"
 alembic upgrade head
 ```
 
-Migrations run automatically at startup for a long-lived server, but **not on
-Vercel** — every cold start would re-check the schema, and concurrent
-functions could race. Apply them manually or from CI after a schema change.
+Migrations run automatically at startup for a long-lived local server, but
+**never on Vercel**: every cold start would re-check the schema, and
+concurrent functions could race. Production is migrated by the
+[`Migrate production`](.github/workflows/migrate.yml) workflow, which runs
+when a push to `main` changes `migrations/` and waits for approval through a
+GitHub environment before touching the database. It refuses to run unless
+its target is Postgres, so a missing secret cannot "succeed" against a
+throwaway SQLite file.
 
 ## Deployment
 
@@ -208,7 +213,11 @@ configuration and the client uses relative paths.
 
 - **Framework preset:** Other (the build is defined in `vercel.json`)
 - **Root directory:** the repository root
-- **Environment variable:** `MEAL_PLANNER_DB_URL`, Production scope
+- **Environment variable:** `MEAL_PLANNER_DB_URL` (Neon's pooled URL),
+  Production scope
+- **Migrations:** a GitHub environment named `production` with a required
+  reviewer, holding `MEAL_PLANNER_MIGRATION_DB_URL` (Neon's direct,
+  non-pooled URL). See [Migrations](#migrations).
 - **Region:** `syd1`, set in `vercel.json`. Functions default to `iad1`
   (Virginia); running them next to the database is worth more than any
   application-level optimisation here.

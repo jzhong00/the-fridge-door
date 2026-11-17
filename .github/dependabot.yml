@@ -1,0 +1,71 @@
+# Weekly dependency updates.
+#
+# Minor and patch updates arrive as one grouped PR per ecosystem; majors come
+# separately because they need reading. The cooldown holds every update back
+# until it has been public for two weeks, the same rule applied when adding
+# a dependency by hand: a compromised release is usually caught and pulled
+# within days.
+#
+# The three Python dependency files are updated together, so the test that
+# checks they agree (tests/test_packaging.py) keeps passing.
+
+version: 2
+
+updates:
+  - package-ecosystem: pip
+    directories:
+      - "/"
+      - "/api"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Australia/Brisbane
+    cooldown:
+      default-days: 14
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: "/web"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Australia/Brisbane
+    cooldown:
+      default-days: 14
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  # The type generator lives apart from the app because openapi-typescript
+  # needs TypeScript 5 and the app is on 6. Hold TypeScript at 5 here until
+  # openapi-typescript supports a newer major.
+  - package-ecosystem: npm
+    directory: "/web/tools/codegen"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Australia/Brisbane
+    cooldown:
+      default-days: 14
+    groups:
+      codegen:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Australia/Brisbane
+    cooldown:
+      default-days: 14
+    groups:
+      actions:
+        patterns: ["*"]
