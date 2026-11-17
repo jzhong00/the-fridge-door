@@ -36,6 +36,10 @@ dev = [
     # Lint and format. The frontend has had both since it was written; this
     # keeps the Python held to the same standard rather than a lower one.
     "ruff==0.15.1",
+    # Static type checking for app/ and server/, run in CI.
+    "pyright==1.1.414",
+    # Coverage, with a floor in [tool.coverage.report] that CI enforces.
+    "pytest-cov==7.1.0",
 ]
 
 [tool.setuptools]
@@ -55,6 +59,23 @@ select = ["E", "F", "W", "I", "B", "C4", "UP", "SIM", "RUF"]
 "tests/*" = ["E501"]
 # Alembic generates these; leave the generated shape alone.
 "migrations/versions/*" = ["E501", "I001"]
+
+[tool.pyright]
+# Application code only. The tests lean on fixtures and monkeypatching,
+# where strict typing costs more than it catches.
+include = ["app", "server"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+
+[tool.coverage.run]
+source = ["app", "server"]
+
+[tool.coverage.report]
+# Just under the measured 97%, so coverage cannot fall without CI saying so.
+# Raise it as it rises; never lower it to make a build pass.
+fail_under = 95
+show_missing = true
+skip_covered = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

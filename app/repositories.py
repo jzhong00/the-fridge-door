@@ -11,6 +11,7 @@ from contextlib import AbstractContextManager, nullcontext
 from datetime import date
 
 from sqlalchemy import delete, func, insert
+from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from app.db import Database
@@ -21,7 +22,14 @@ from app.exceptions import (
     MealNotFoundError,
     UnitMismatchError,
 )
-from app.models import DayOfWeek, Ingredient, Meal, MealIngredient, WeeklyPlan
+from app.models import (
+    DayOfWeek,
+    Ingredient,
+    Meal,
+    MealIngredient,
+    WeeklyPlan,
+    persisted_id,
+)
 from app.templates import MealTemplate
 
 
@@ -93,7 +101,7 @@ class MealRepository(_Repository):
                 )
             ).all()
 
-        by_meal: dict[int, list[tuple[MealIngredient, Ingredient]]] = {}
+        by_meal: dict[int | None, list[tuple[MealIngredient, Ingredient]]] = {}
         for link, ingredient in rows:
             by_meal.setdefault(link.meal_id, []).append((link, ingredient))
 
@@ -131,7 +139,7 @@ class MealRepository(_Repository):
 
             for item in template.ingredients:
                 self._attach_ingredient(
-                    session, meal.id, item.name, item.qty, item.unit
+                    session, persisted_id(meal), item.name, item.qty, item.unit
                 )
             return meal
 
@@ -276,12 +284,13 @@ class MealRepository(_Repository):
             session.add(ingredient)
             session.flush()
 
-        link = cls._find_link(session, meal_id, ingredient.id)
+        ingredient_id = persisted_id(ingredient)
+        link = cls._find_link(session, meal_id, ingredient_id)
         if link is None:
             session.add(
                 MealIngredient(
                     meal_id=meal_id,
-                    ingredient_id=ingredient.id,
+                    ingredient_id=ingredient_id,
                     qty=qty,
                     unit=unit,
                 )
@@ -354,7 +363,7 @@ class WeeklyPlanRepository(_Repository):
             # days never set.
             session.execute(
                 delete(WeeklyPlan).where(
-                    WeeklyPlan.week_start_date == week_start_date,
+                    col(WeeklyPlan.week_start_date) == week_start_date,
                     col(WeeklyPlan.day_of_week).in_(wanted),
                 )
             )
@@ -381,23 +390,26 @@ class WeeklyPlanRepository(_Repository):
 
         One join rather than a query per meal and per ingredient, which cost
         48 statements for a full week - free on SQLite, ~2.4s over a network.
+
+        SQLAlchemy's own select, because SQLModel's typed overloads stop at
+        four columns and this needs five.
         """
         statement = (
-            select(
-                Ingredient.name,
-                MealIngredient.qty,
-                MealIngredient.unit,
-                WeeklyPlan.servings,
-                Meal.servings,
+            sa_select(
+                col(Ingredient.name),
+                col(MealIngredient.qty),
+                col(MealIngredient.unit),
+                col(WeeklyPlan.servings),
+                col(Meal.servings),
             )
             .select_from(WeeklyPlan)
-            .join(Meal, Meal.id == WeeklyPlan.meal_id)
-            .join(MealIngredient, MealIngredient.meal_id == Meal.id)
-            .join(Ingredient, Ingredient.id == MealIngredient.ingredient_id)
-            .where(WeeklyPlan.week_start_date == week_start_date)
+            .join(Meal, col(Meal.id) == col(WeeklyPlan.meal_id))
+            .join(MealIngredient, col(MealIngredient.meal_id) == col(Meal.id))
+            .join(Ingredient, col(Ingredient.id) == col(MealIngredient.ingredient_id))
+            .where(col(WeeklyPlan.week_start_date) == week_start_date)
         )
         with self._session() as session:
-            return list(session.exec(statement).all())
+            return list(session.execute(statement).tuples().all())
 
     def copy_week(self, source_week: date, target_week: date) -> int:
         """Copy assigned days from one week onto another, returning the count.

@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from app.models import Ingredient, Meal, MealIngredient, WeeklyPlan
+from app.models import (
+    DayOfWeek,
+    Ingredient,
+    Meal,
+    MealIngredient,
+    WeeklyPlan,
+    persisted_id,
+)
 from app.planner import GroceryItem
 from app.templates import MealTemplate
 from server.schemas import (
@@ -17,7 +24,7 @@ from server.schemas import (
 
 def ingredient_amount(link: MealIngredient, ingredient: Ingredient) -> IngredientAmount:
     return IngredientAmount(
-        ingredient_id=ingredient.id,
+        ingredient_id=persisted_id(ingredient),
         name=ingredient.name,
         qty=link.qty or 0,
         unit=link.unit or "",
@@ -28,7 +35,7 @@ def meal_read(
     meal: Meal, ingredients: list[tuple[MealIngredient, Ingredient]]
 ) -> MealRead:
     return MealRead(
-        id=meal.id,
+        id=persisted_id(meal),
         name=meal.name,
         servings=meal.servings,
         ingredients=[ingredient_amount(link, ing) for link, ing in ingredients],
@@ -37,7 +44,9 @@ def meal_read(
 
 def day_assignment(plan: WeeklyPlan) -> DayAssignment:
     return DayAssignment(
-        day=plan.day_of_week, meal_id=plan.meal_id, servings=plan.servings
+        day=DayOfWeek(plan.day_of_week),
+        meal_id=plan.meal_id,
+        servings=plan.servings,
     )
 
 

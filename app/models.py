@@ -12,9 +12,27 @@ query instead of lazy-loading one per row.
 
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from typing import Protocol
 
 from sqlalchemy import DateTime, UniqueConstraint
 from sqlmodel import Field, SQLModel
+
+
+class _HasId(Protocol):
+    id: int | None
+
+
+def persisted_id(row: _HasId) -> int:
+    """The primary key of a row that has been flushed or loaded.
+
+    SQLModel types ``id`` as ``int | None`` because a row has no key until
+    the database assigns one. Past that point a missing key is a bug, and
+    this says so rather than letting ``None`` travel on into a query or a
+    response.
+    """
+    if row.id is None:
+        raise RuntimeError(f"{type(row).__name__} has no id; was it flushed?")
+    return row.id
 
 
 class DayOfWeek(StrEnum):
@@ -52,7 +70,9 @@ class Meal(SQLModel, table=True):
     # Postgres would then drop the UTC offset. Invisible on SQLite.
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
-        sa_type=DateTime(timezone=True),
+        # SQLModel's annotation only admits a type here, but an instance is
+        # what carries timezone=True, and SQLModel accepts one at runtime.
+        sa_type=DateTime(timezone=True),  # pyright: ignore[reportArgumentType]
     )
 
 

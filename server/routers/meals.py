@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Response, status
 
+from app.models import persisted_id
 from app.templates import MEAL_TEMPLATES
 from server import serializers
 from server.deps import Services, ServicesDep
@@ -60,7 +61,9 @@ def create_meal_from_template(template_name: str, services: ServicesDep) -> Meal
         )
 
     meal = services.meals.add_from_template(template)
-    return serializers.meal_read(meal, services.meals.list_ingredients(meal.id))
+    return serializers.meal_read(
+        meal, services.meals.list_ingredients(persisted_id(meal))
+    )
 
 
 @router.patch("/{meal_id}", response_model=MealRead)
