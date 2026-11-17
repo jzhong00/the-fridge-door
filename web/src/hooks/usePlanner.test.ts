@@ -1,7 +1,10 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "@/api/client";
+import { ApiError, api } from "@/api/client";
+import { createQueryClient } from "@/api/queryClient";
 import { usePlanner } from "@/hooks/usePlanner";
 import { makeMeal, makeState } from "@/test/factories";
 
@@ -28,6 +31,8 @@ const plan = (mealId: number | null) => [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The week lives in the URL, and jsdom keeps it between tests.
+  window.history.replaceState(null, "", "/");
   // The hook starts on the Monday of the current real week, and these tests
   // assert against a fixed one. Without pinning the clock they only passed
   // during the week of 24 August 2026, and quietly stopped meaning anything
@@ -47,9 +52,12 @@ beforeEach(() => {
   }));
 });
 
-/** Render, and wait for the initial bootstrap to land. */
+/** Render with a fresh cache, and wait for the initial bootstrap to land. */
 async function renderPlanner() {
-  const view = renderHook(() => usePlanner());
+  const client = createQueryClient({ retry: false });
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children);
+  const view = renderHook(() => usePlanner(), { wrapper });
   await waitFor(() => expect(view.result.current.state).not.toBeNull());
   return view;
 }
@@ -113,10 +121,11 @@ describe("weeks already visited", () => {
 
   it("shows a plan saved since, not the one first fetched", async () => {
     const { result } = await renderPlanner();
-    mocked.setPlan.mockResolvedValue({
-      week_start: "2026-08-24",
+    // The server replies with the week it saved, which is the week sent.
+    mocked.setPlan.mockImplementation(async (week: string) => ({
+      week_start: week,
       days: plan(1),
-    });
+    }));
 
     act(() => result.current.setWeek("2026-08-31"));
     await waitFor(() => expect(mocked.getPlan).toHaveBeenCalledTimes(1));
@@ -130,7 +139,35 @@ describe("weeks already visited", () => {
     expect(mocked.getPlan).toHaveBeenCalledTimes(1);
   });
 
-  it("refetches after a delete, which unassigns the meal everywhere", async () => {
+  it("files a slow save under the week it was saved for", async () => {
+    // Switching week while a save is in flight must not put that plan on
+    // the week now on screen.
+    const { result } = await renderPlanner();
+    let finishSave!: (saved: { week_start: string; days: ReturnType<typeof plan> }) => void;
+    mocked.setPlan.mockReturnValue(
+      new Promise((resolve) => {
+        finishSave = resolve;
+      }),
+    );
+
+    act(() => {
+      void result.current.savePlan(plan(1));
+    });
+    act(() => result.current.setWeek("2026-08-31"));
+    await waitFor(() =>
+      expect(result.current.state?.week_start).toBe("2026-08-31"),
+    );
+    await act(async () => finishSave({ week_start: "2026-08-24", days: plan(1) }));
+
+    expect(result.current.state?.plan[0].meal_id).toBeNull();
+    act(() => result.current.setWeek("2026-08-24"));
+    await waitFor(() => expect(result.current.state?.plan[0].meal_id).toBe(1));
+  });
+
+  it("unassigns a deleted meal from every cached week without refetching", async () => {
+    // The server clears the meal from every day of every week, a known
+    // effect, so the cached weeks are corrected in place. This used to
+    // throw the whole cache away and refetch each week on the next visit.
     const { result } = await renderPlanner();
     mocked.deleteMeal.mockResolvedValue(undefined);
 
@@ -139,7 +176,15 @@ describe("weeks already visited", () => {
     await act(() => result.current.deleteMeal(1));
 
     act(() => result.current.setWeek("2026-08-24"));
-    await waitFor(() => expect(mocked.getPlan).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(result.current.state?.week_start).toBe("2026-08-24"),
+    );
+    expect(result.current.state?.plan[0]).toMatchObject({
+      meal_id: null,
+      servings: null,
+    });
+    expect(result.current.state?.meals).toHaveLength(0);
+    expect(mocked.getPlan).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -173,5 +218,92 @@ describe("the grocery list", () => {
 
     await waitFor(() => expect(result.current.grocery).toEqual(lines));
     expect(mocked.getGroceryList).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the week in the URL", () => {
+  it("opens the week named in the link", async () => {
+    window.history.replaceState(null, "", "/?week=2026-08-31");
+
+    const { result } = await renderPlanner();
+
+    expect(result.current.week).toBe("2026-08-31");
+    expect(mocked.getState).toHaveBeenCalledWith("2026-08-31");
+  });
+
+  it("snaps any day in the link to its Monday", async () => {
+    window.history.replaceState(null, "", "/?week=2026-09-03");
+
+    const { result } = await renderPlanner();
+
+    expect(result.current.week).toBe("2026-08-31");
+  });
+
+  it.each(["not-a-date", "2026-13-45", ""])(
+    "falls back to this week for %j",
+    async (raw) => {
+      window.history.replaceState(null, "", `/?week=${raw}`);
+
+      const { result } = await renderPlanner();
+
+      expect(result.current.week).toBe("2026-08-24");
+    },
+  );
+
+  it("writes the week back to the URL without adding history", async () => {
+    const { result } = await renderPlanner();
+    const historyLength = window.history.length;
+
+    act(() => result.current.setWeek("2026-08-31"));
+
+    expect(new URLSearchParams(window.location.search).get("week")).toBe(
+      "2026-08-31",
+    );
+    expect(window.history.length).toBe(historyLength);
+  });
+});
+
+describe("pending work and errors", () => {
+  it("tracks pending work per area, not globally", async () => {
+    const { result } = await renderPlanner();
+    let finishSave!: (plan: { week_start: string; days: [] }) => void;
+    mocked.setPlan.mockReturnValue(
+      new Promise((resolve) => {
+        finishSave = resolve;
+      }),
+    );
+
+    act(() => {
+      void result.current.savePlan([]);
+    });
+    await waitFor(() => expect(result.current.planPending).toBe(true));
+    // Saving the plan must not freeze meal editing.
+    expect(result.current.mealsPending).toBe(false);
+
+    await act(async () => finishSave({ week_start: "2026-08-24", days: [] }));
+    await waitFor(() => expect(result.current.planPending).toBe(false));
+  });
+
+  it("reports a failed action, and clears it on dismiss", async () => {
+    const { result } = await renderPlanner();
+    mocked.deleteMeal.mockRejectedValue(new ApiError(404, "No meal with id 1."));
+
+    await act(() => result.current.deleteMeal(1));
+    expect(result.current.error).toBe("No meal with id 1.");
+
+    act(() => result.current.dismissError());
+    expect(result.current.error).toBeNull();
+  });
+
+  it("reports a failed first load", async () => {
+    mocked.getState.mockRejectedValue(new ApiError(503, "Database unavailable."));
+    const client = createQueryClient({ retry: false });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+
+    const { result } = renderHook(() => usePlanner(), { wrapper });
+
+    await waitFor(() => expect(result.current.error).toBe("Database unavailable."));
+    expect(result.current.state).toBeNull();
   });
 });

@@ -5,11 +5,11 @@ import type { AppState } from "@/api/types";
 
 export function TemplateGallery({
   state,
-  busy,
+  pending,
   onAdd,
 }: {
   state: AppState;
-  busy: boolean;
+  pending: boolean;
   onAdd: (name: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -44,7 +44,7 @@ export function TemplateGallery({
             return (
               <button
                 key={template.name}
-                disabled={busy || added}
+                disabled={pending || added}
                 onClick={() => onAdd(template.name)}
                 aria-label={added ? `${template.name} (added)` : `Add ${template.name}`}
                 className="group flex items-start justify-between gap-3 rounded-lg border p-3 text-left transition-colors hover:border-primary/50 hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-transparent"

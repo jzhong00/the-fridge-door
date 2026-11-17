@@ -72,6 +72,24 @@ Tests: request correlation and logging sections.
 503 problem when the database is unreachable. The keep-warm workflow pings
 `/health/ready`. `/health` remains an alias of `/health/live`.
 
+## Frontend
+
+- Server state lives in TanStack Query, one cache entry per resource: the
+  library (meals, ingredient names, templates), one plan per week, one
+  grocery list per week. Components never fetch.
+- Mutations patch the cache from the API's response instead of refetching.
+  When the server's effect is known (deleting a meal unassigns it from every
+  week), the cache is corrected in place. A response is filed under the
+  resource it names, not whatever is on screen when it arrives.
+- Pending state is per area (`mealsPending`, `planPending`,
+  `groceryPending`), never one flag that freezes the whole app.
+- View state that should survive a refresh or a shared link (tab, week)
+  lives in the URL, written with `replaceState` so the back button is not
+  filled with every week visited. Unknown values fall back to a default.
+- Types come from the generated API contract (see API above).
+
+Tests: `web/src/hooks/usePlanner.test.ts`, `web/src/App.test.tsx`.
+
 ## Database
 
 - Schema changes go through Alembic migrations only, reviewed by hand in

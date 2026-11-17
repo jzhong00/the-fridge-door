@@ -1,179 +1,181 @@
 /**
- * Application state for one week.
+ * Application state for one week, held in the TanStack Query cache.
  *
- * The first load fetches everything in a single request and then holds it in
- * memory. Mutations return the updated resource, so state is patched from the
- * response rather than triggering a refetch. That is what makes clicking
- * around feel instant: the network is touched when data actually changes,
- * not on every interaction.
+ * Three kinds of server state, each with its own cache entry:
  *
- * Changing week is the one exception, and it fetches only the day
- * assignments - meals, templates and ingredient names do not vary by week, so
- * refetching them cost three extra queries per arrow click. Weeks already
- * seen are served from `seenWeeks` and cost nothing at all.
+ * - the library (meals, ingredient names, templates), which does not vary by
+ *   week;
+ * - one plan per week visited;
+ * - one grocery list per week it was generated for.
+ *
+ * The first load is a single request (`/api/state`) that fills the library
+ * and seeds the current week's plan, so nothing else is fetched. Changing
+ * week fetches only that week's plan, and a week already visited costs
+ * nothing. Mutations patch the cache from the API's response instead of
+ * refetching, which is what makes the app feel instant: the network is used
+ * when data changes, not when it is looked at.
+ *
+ * The week lives in the URL (`?week=`), so a refresh or a shared link opens
+ * the same week.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { AppState, GroceryLine, Meal } from "../api/types";
-import { mondayOf } from "../lib/dates";
+import { queryKeys } from "../api/queryClient";
+import type { AppState, Meal, WeekPlan } from "../api/types";
+import { parseWeek, useSearchParam } from "../lib/searchParams";
+
+type Library = Pick<AppState, "meals" | "ingredient_names" | "templates">;
 
 export function usePlanner() {
-  const [week, setWeek] = useState(() => mondayOf(new Date()));
-  const [state, setState] = useState<AppState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // Tagged with the week it was generated for. Deriving visibility from that
-  // is what lets the week-change effect avoid a setState purely to clear it,
-  // and means returning to a week shows the list you already generated.
-  const [grocery, setGrocery] = useState<{
-    week: string;
-    lines: GroceryLine[];
-  } | null>(null);
+  const queryClient = useQueryClient();
+  const [week, setWeek] = useSearchParam("week", parseWeek);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [dismissedError, setDismissedError] = useState<unknown>(null);
 
-  // Day assignments for weeks already fetched, so going back to one is free.
-  // A ref rather than state: reading it must not itself trigger a render.
-  const seenWeeks = useRef(new Map<string, AppState["plan"]>());
-  // Whether the one-off bootstrap has happened. A ref, not `state`, so this
-  // effect depends only on `week` - depending on `state` would refetch on
-  // every mutation.
-  const bootstrapped = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const cached = seenWeeks.current.get(week);
-    if (cached) {
-      // week_start moves too, or the heading keeps naming the week we left.
-      setState((current) =>
-        current ? { ...current, week_start: week, plan: cached } : current,
-      );
-      return;
-    }
-
-    setLoading(true);
-    // Only the very first load needs the meals, templates and ingredient
-    // names; after that a week change is just its plan.
-    const load = bootstrapped.current
-      ? api.getPlan(week).then((p) => ({ start: p.week_start, plan: p.days }))
-      : api.getState(week).then((next) => ({ full: next }));
-
-    load
-      .then((result) => {
-        // A slower earlier request must not overwrite a newer week.
-        if (cancelled) return;
-        if ("full" in result) {
-          bootstrapped.current = true;
-          setState(result.full);
-          seenWeeks.current.set(result.full.week_start, result.full.plan);
-        } else {
-          setState((current) =>
-            current
-              ? { ...current, week_start: result.start, plan: result.plan }
-              : current,
-          );
-          seenWeeks.current.set(result.start, result.plan);
-        }
-        setError(null);
-      })
-      .catch((err) => !cancelled && setError(describe(err)))
-      .finally(() => !cancelled && setLoading(false));
-
-    return () => {
-      cancelled = true;
-    };
-  }, [week]);
-
-  /** Record a plan we just wrote, so returning to this week shows it. */
-  const rememberPlan = useCallback(
-    (weekStart: string, plan: AppState["plan"]) => {
-      seenWeeks.current.set(weekStart, plan);
-    },
-    [],
-  );
-
-  /** Drop every cached week, after a change that can affect all of them. */
-  const forgetWeeks = useCallback(() => seenWeeks.current.clear(), []);
-
-  /** Run a mutation, surface any error, and keep the UI responsive. */
-  const mutate = useCallback(async <T,>(action: () => Promise<T>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      return await action();
-    } catch (err) {
-      setError(describe(err));
-      return null;
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  /** Replace one meal in place, or append it if it is new. */
-  const upsertMeal = useCallback((meal: Meal) => {
-    setState((current) => {
-      if (!current) return current;
-      const exists = current.meals.some((m) => m.id === meal.id);
+  const library = useQuery({
+    queryKey: queryKeys.library,
+    queryFn: async (): Promise<Library> => {
+      const state = await api.getState(week);
+      // Seeding the plan cache here is what keeps the first load to one
+      // request: the plan query below is enabled only after this succeeds,
+      // and finds its week already cached.
+      queryClient.setQueryData<WeekPlan>(queryKeys.plan(state.week_start), {
+        week_start: state.week_start,
+        days: state.plan,
+      });
       return {
-        ...current,
-        meals: exists
-          ? current.meals.map((m) => (m.id === meal.id ? meal : m))
-          : [...current.meals, meal],
-        // A new ingredient may have appeared, and the picker reads this list.
-        ingredient_names: Array.from(
-          new Set([
-            ...current.ingredient_names,
-            ...meal.ingredients.map((i) => i.name),
-          ]),
-        ).sort(),
+        meals: state.meals,
+        ingredient_names: state.ingredient_names,
+        templates: state.templates,
       };
+    },
+  });
+
+  const plan = useQuery({
+    queryKey: queryKeys.plan(week),
+    queryFn: () => api.getPlan(week),
+    enabled: library.isSuccess,
+    // Keep the week we are leaving on screen, dimmed, rather than blanking
+    // the page while the next one loads.
+    placeholderData: keepPreviousData,
+  });
+
+  // Generated on request, then held per week: returning to a week shows the
+  // list already generated for it.
+  const grocery = useQuery({
+    queryKey: queryKeys.grocery(week),
+    queryFn: () => api.getGroceryList(week),
+    enabled: false,
+  });
+
+  const report = (err: unknown) => setActionError(describe(err));
+  const clearError = () => setActionError(null);
+
+  /** A grocery list is derived from meals and plans, so changes outdate it. */
+  const forgetGroceries = (weekStart?: string) =>
+    queryClient.resetQueries({
+      queryKey: weekStart ? queryKeys.grocery(weekStart) : queryKeys.groceries,
     });
-    // The grocery list is derived from meals, so it is now stale.
-    setGrocery(null);
-  }, []);
+
+  /** Replace one meal in the library, or append it if it is new. */
+  const upsertMeal = (meal: Meal) => {
+    queryClient.setQueryData<Library>(queryKeys.library, (current) =>
+      current
+        ? {
+            ...current,
+            meals: current.meals.some((m) => m.id === meal.id)
+              ? current.meals.map((m) => (m.id === meal.id ? meal : m))
+              : [...current.meals, meal],
+            // A new ingredient may have appeared, and the picker reads this.
+            ingredient_names: Array.from(
+              new Set([
+                ...current.ingredient_names,
+                ...meal.ingredients.map((i) => i.name),
+              ]),
+            ).sort(),
+          }
+        : current,
+    );
+    forgetGroceries();
+  };
+
+  const mealChange = useMutation({
+    mutationFn: (change: () => Promise<Meal>) => change(),
+    onMutate: clearError,
+    onSuccess: upsertMeal,
+    onError: report,
+  });
+
+  const mealDeletion = useMutation({
+    mutationFn: async (id: number) => {
+      await api.deleteMeal(id);
+      return id;
+    },
+    onMutate: clearError,
+    onSuccess: (id) => {
+      queryClient.setQueryData<Library>(queryKeys.library, (current) =>
+        current
+          ? { ...current, meals: current.meals.filter((m) => m.id !== id) }
+          : current,
+      );
+      // The server unassigns the meal from every day of every week, so do
+      // the same to every week in the cache rather than refetching them.
+      queryClient.setQueriesData<WeekPlan>({ queryKey: queryKeys.plans }, (p) =>
+        p
+          ? {
+              ...p,
+              days: p.days.map((d) =>
+                d.meal_id === id ? { ...d, meal_id: null, servings: null } : d,
+              ),
+            }
+          : p,
+      );
+      forgetGroceries();
+    },
+    onError: report,
+  });
+
+  const planChange = useMutation({
+    mutationFn: (change: () => Promise<WeekPlan>) => change(),
+    onMutate: clearError,
+    // Keyed by the week the server says it saved, not the week on screen,
+    // so switching week mid-request cannot file the plan under the wrong one.
+    onSuccess: (saved) => {
+      queryClient.setQueryData(queryKeys.plan(saved.week_start), saved);
+      forgetGroceries(saved.week_start);
+    },
+    onError: report,
+  });
+
+  /** Run a mutation; failures are reported through `error`, not thrown. */
+  const run = <T,>(promise: Promise<T>): Promise<void> =>
+    promise.then(
+      () => undefined,
+      () => undefined,
+    );
 
   const actions = {
     addMeal: (name: string, servings: number) =>
-      mutate(() => api.createMeal(name, servings)).then(
-        (meal) => meal && upsertMeal(meal),
-      ),
+      run(mealChange.mutateAsync(() => api.createMeal(name, servings))),
 
     addFromTemplate: (templateName: string) =>
-      mutate(() => api.createMealFromTemplate(templateName)).then(
-        (meal) => meal && upsertMeal(meal),
-      ),
+      run(mealChange.mutateAsync(() => api.createMealFromTemplate(templateName))),
 
     updateMeal: (id: number, name: string, servings: number) =>
-      mutate(() => api.updateMeal(id, name, servings)).then(
-        (meal) => meal && upsertMeal(meal),
-      ),
+      run(mealChange.mutateAsync(() => api.updateMeal(id, name, servings))),
 
-    deleteMeal: (id: number) =>
-      mutate(() => api.deleteMeal(id)).then(() => {
-        setState((current) =>
-          current
-            ? {
-                ...current,
-                meals: current.meals.filter((m) => m.id !== id),
-                // Deleting a meal clears it from any day it was planned on.
-                plan: current.plan.map((d) =>
-                  d.meal_id === id ? { ...d, meal_id: null, servings: null } : d,
-                ),
-              }
-            : current,
-        );
-        // The meal is unassigned from every week, not just this one, so no
-        // cached plan can be trusted.
-        forgetWeeks();
-        setGrocery(null);
-      }),
+    deleteMeal: (id: number) => run(mealDeletion.mutateAsync(id)),
 
     addIngredient: (mealId: number, name: string, qty: number, unit: string) =>
-      mutate(() => api.addIngredient(mealId, name, qty, unit)).then(
-        (meal) => meal && upsertMeal(meal),
-      ),
+      run(mealChange.mutateAsync(() => api.addIngredient(mealId, name, qty, unit))),
 
     updateIngredient: (
       mealId: number,
@@ -181,53 +183,54 @@ export function usePlanner() {
       qty: number,
       unit: string,
     ) =>
-      mutate(() => api.updateIngredient(mealId, ingredientId, qty, unit)).then(
-        (meal) => meal && upsertMeal(meal),
+      run(
+        mealChange.mutateAsync(() =>
+          api.updateIngredient(mealId, ingredientId, qty, unit),
+        ),
       ),
 
     removeIngredient: (mealId: number, ingredientId: number) =>
-      mutate(() => api.removeIngredient(mealId, ingredientId)).then(
-        (meal) => meal && upsertMeal(meal),
-      ),
+      run(mealChange.mutateAsync(() => api.removeIngredient(mealId, ingredientId))),
 
     savePlan: (days: AppState["plan"]) =>
-      mutate(() => api.setPlan(week, days)).then((plan) => {
-        if (plan) {
-          setState((current) =>
-            current ? { ...current, plan: plan.days } : current,
-          );
-          rememberPlan(week, plan.days);
-          setGrocery(null);
-        }
-      }),
+      run(planChange.mutateAsync(() => api.setPlan(week, days))),
 
     copyPreviousWeek: () =>
-      mutate(() => api.copyPreviousWeek(week)).then((plan) => {
-        if (plan) {
-          setState((current) =>
-            current ? { ...current, plan: plan.days } : current,
-          );
-          rememberPlan(week, plan.days);
-          setGrocery(null);
-        }
-      }),
+      run(planChange.mutateAsync(() => api.copyPreviousWeek(week))),
 
-    generateGroceryList: () =>
-      mutate(() => api.getGroceryList(week)).then(
-        (lines) => lines && setGrocery({ week, lines }),
-      ),
+    generateGroceryList: async () => {
+      clearError();
+      const result = await grocery.refetch();
+      if (result.error) report(result.error);
+    },
   };
+
+  const state: AppState | null =
+    library.data && plan.data
+      ? { ...library.data, week_start: plan.data.week_start, plan: plan.data.days }
+      : null;
+
+  // A failed load stays visible until dismissed; a failed action replaces it.
+  const loadError = library.error ?? plan.error;
+  const error =
+    actionError ??
+    (loadError && loadError !== dismissedError ? describe(loadError) : null);
 
   return {
     week,
     setWeek,
     state,
-    loading,
+    loading: !state || plan.isPlaceholderData,
     error,
-    busy,
-    // Only ever the list for the week on screen.
-    grocery: grocery?.week === week ? grocery.lines : null,
-    dismissError: () => setError(null),
+    dismissError: () => {
+      setActionError(null);
+      setDismissedError(loadError);
+    },
+    // Pending work per area, so one slow save does not freeze the whole app.
+    mealsPending: mealChange.isPending || mealDeletion.isPending,
+    planPending: planChange.isPending,
+    groceryPending: grocery.isFetching,
+    grocery: grocery.data ?? null,
     ...actions,
   };
 }

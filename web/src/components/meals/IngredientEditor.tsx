@@ -16,7 +16,7 @@ import {
 export function IngredientEditor({
   state,
   meal,
-  busy,
+  pending,
   onSelectMeal,
   onAdd,
   onUpdate,
@@ -24,7 +24,7 @@ export function IngredientEditor({
 }: {
   state: AppState;
   meal: Meal;
-  busy: boolean;
+  pending: boolean;
   onSelectMeal: (id: number) => void;
   onAdd: (mealId: number, name: string, qty: number, unit: string) => void;
   onUpdate: (
@@ -122,7 +122,7 @@ export function IngredientEditor({
             placeholder="g, ml"
           />
         </div>
-        <Button type="submit" disabled={busy || !valid}>
+        <Button type="submit" disabled={pending || !valid}>
           <Plus className="size-4" />
           Add ingredient
         </Button>
@@ -139,7 +139,7 @@ export function IngredientEditor({
               key={ingredient.ingredient_id}
               mealId={meal.id}
               ingredient={ingredient}
-              busy={busy}
+              pending={pending}
               onUpdate={onUpdate}
               onRemove={onRemove}
             />
@@ -153,13 +153,13 @@ export function IngredientEditor({
 function IngredientChip({
   mealId,
   ingredient,
-  busy,
+  pending,
   onUpdate,
   onRemove,
 }: {
   mealId: number;
   ingredient: IngredientAmount;
-  busy: boolean;
+  pending: boolean;
   onUpdate: (
     mealId: number,
     ingredientId: number,
@@ -217,7 +217,7 @@ function IngredientChip({
         </div>
         <Button
           size="sm"
-          disabled={busy || !(Number(qty) > 0)}
+          disabled={pending || !(Number(qty) > 0)}
           onClick={() => {
             onUpdate(mealId, ingredient.ingredient_id, Number(qty), unit.trim());
             setEditing(false);
@@ -246,7 +246,7 @@ function IngredientChip({
         variant="ghost"
         size="icon"
         className="size-6"
-        disabled={busy}
+        disabled={pending}
         aria-label={`Remove ${ingredient.name}`}
         onClick={() => onRemove(mealId, ingredient.ingredient_id)}
       >

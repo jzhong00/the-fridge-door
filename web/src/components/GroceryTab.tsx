@@ -8,11 +8,11 @@ import { formatDate } from "@/lib/dates";
 interface Props {
   weekStart: string;
   lines: GroceryLine[] | null;
-  busy: boolean;
+  pending: boolean;
   onGenerate: () => void;
 }
 
-export function GroceryTab({ weekStart, lines, busy, onGenerate }: Props) {
+export function GroceryTab({ weekStart, lines, pending, onGenerate }: Props) {
   const [copied, setCopied] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
@@ -71,7 +71,7 @@ export function GroceryTab({ weekStart, lines, busy, onGenerate }: Props) {
               </Button>
             </>
           )}
-          <Button disabled={busy} onClick={onGenerate}>
+          <Button disabled={pending} onClick={onGenerate}>
             {lines ? "Regenerate" : "Generate list"}
           </Button>
         </div>

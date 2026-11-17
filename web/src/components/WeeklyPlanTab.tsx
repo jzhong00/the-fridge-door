@@ -30,12 +30,12 @@ const UNSET = "unset";
 
 interface Props {
   state: AppState;
-  busy: boolean;
+  pending: boolean;
   onSave: (days: DayAssignment[]) => void;
   onCopyPrevious: () => void;
 }
 
-export function WeeklyPlanTab({ state, busy, onSave, onCopyPrevious }: Props) {
+export function WeeklyPlanTab({ state, pending, onSave, onCopyPrevious }: Props) {
   // The draft lives in the browser: editing a day is instant, and nothing
   // reaches the network until Save.
   const [draft, setDraft] = useState<Record<Day, DayAssignment>>(() =>
@@ -76,12 +76,12 @@ export function WeeklyPlanTab({ state, busy, onSave, onCopyPrevious }: Props) {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" disabled={busy} onClick={onCopyPrevious}>
+          <Button variant="outline" disabled={pending} onClick={onCopyPrevious}>
             <CopyIcon className="size-4" />
             Copy previous week
           </Button>
           <Button
-            disabled={busy || !dirty}
+            disabled={pending || !dirty}
             onClick={() => onSave(Object.values(draft))}
           >
             Save plan

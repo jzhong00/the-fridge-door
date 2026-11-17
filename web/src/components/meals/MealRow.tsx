@@ -19,12 +19,12 @@ import { Label } from "@/components/ui/label";
 
 export function MealRow({
   meal,
-  busy,
+  pending,
   onUpdate,
   onDelete,
 }: {
   meal: Meal;
-  busy: boolean;
+  pending: boolean;
   onUpdate: (id: number, name: string, servings: number) => void;
   onDelete: (id: number) => void;
 }) {
@@ -76,7 +76,7 @@ export function MealRow({
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  disabled={busy}
+                  disabled={pending}
                   onClick={() => onDelete(meal.id)}
                 >
                   Delete
@@ -108,7 +108,7 @@ export function MealRow({
             />
           </div>
           <Button
-            disabled={busy || !name.trim()}
+            disabled={pending || !name.trim()}
             onClick={() => {
               onUpdate(meal.id, name.trim(), Math.max(1, Number(servings) || 1));
               setEditing(false);

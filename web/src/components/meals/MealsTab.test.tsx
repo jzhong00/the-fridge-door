@@ -8,7 +8,7 @@ import { makeMeal, makeState, makeTemplate } from "@/test/factories";
 function renderTab(overrides = {}) {
   const props = {
     state: makeState(),
-    busy: false,
+    pending: false,
     onAddMeal: vi.fn(),
     onAddFromTemplate: vi.fn(),
     onUpdateMeal: vi.fn(),

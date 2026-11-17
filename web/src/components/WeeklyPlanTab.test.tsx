@@ -13,7 +13,7 @@ const stirFry = makeMeal({ id: 2, name: "Chicken Stir Fry", servings: 2 });
 function renderTab(overrides = {}) {
   const props = {
     state: makeState({ meals: [spaghetti, stirFry] }),
-    busy: false,
+    pending: false,
     onSave: vi.fn(),
     onCopyPrevious: vi.fn(),
     ...overrides,
@@ -96,7 +96,7 @@ describe("re-seeding the draft", () => {
     const { rerender } = render(
       <WeeklyPlanTab
         state={makeState({ meals })}
-        busy={false}
+        pending={false}
         onSave={vi.fn()}
         onCopyPrevious={vi.fn()}
       />,
@@ -111,7 +111,7 @@ describe("re-seeding the draft", () => {
           meals,
           plan: [{ day: "Monday", meal_id: 1, servings: 4 }],
         })}
-        busy={false}
+        pending={false}
         onSave={vi.fn()}
         onCopyPrevious={vi.fn()}
       />,
@@ -128,7 +128,7 @@ describe("re-seeding the draft", () => {
     const { rerender } = render(
       <WeeklyPlanTab
         state={makeState({ meals, plan })}
-        busy={false}
+        pending={false}
         onSave={vi.fn()}
         onCopyPrevious={vi.fn()}
       />,
@@ -143,7 +143,7 @@ describe("re-seeding the draft", () => {
           meals: [...meals, makeMeal({ id: 3, name: "Tacos" })],
           plan,
         })}
-        busy={false}
+        pending={false}
         onSave={vi.fn()}
         onCopyPrevious={vi.fn()}
       />,

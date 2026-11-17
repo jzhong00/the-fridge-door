@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePlanner } from "@/hooks/usePlanner";
 import { addDays, formatWeekRange, mondayOf } from "@/lib/dates";
+import { useSearchParam } from "@/lib/searchParams";
 
 const TABS = [
   { value: "meals", label: "Meals" },
@@ -15,8 +16,17 @@ const TABS = [
   { value: "grocery", label: "Grocery List" },
 ] as const;
 
+type Tab = (typeof TABS)[number]["value"];
+
+/** The tab named in the URL, or the first tab for anything unrecognised. */
+function parseTab(raw: string | null): Tab {
+  return TABS.find((tab) => tab.value === raw)?.value ?? "meals";
+}
+
 export default function App() {
   const planner = usePlanner();
+  // In the URL, so a refresh or a shared link opens the same tab.
+  const [tab, setTab] = useSearchParam("tab", parseTab);
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-10 lg:px-10">
@@ -52,7 +62,7 @@ export default function App() {
         </div>
       )}
 
-      <Tabs defaultValue="meals">
+      <Tabs value={tab} onValueChange={(value) => setTab(parseTab(String(value)))}>
         <TabsList>
           {TABS.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
@@ -78,7 +88,7 @@ export default function App() {
             <TabsContent value="meals" className="pt-6">
               <MealsTab
                 state={planner.state}
-                busy={planner.busy}
+                pending={planner.mealsPending}
                 onAddMeal={planner.addMeal}
                 onAddFromTemplate={planner.addFromTemplate}
                 onUpdateMeal={planner.updateMeal}
@@ -92,7 +102,7 @@ export default function App() {
             <TabsContent value="plan" className="pt-6">
               <WeeklyPlanTab
                 state={planner.state}
-                busy={planner.busy}
+                pending={planner.planPending}
                 onSave={planner.savePlan}
                 onCopyPrevious={planner.copyPreviousWeek}
               />
@@ -102,7 +112,7 @@ export default function App() {
               <GroceryTab
                 weekStart={planner.state.week_start}
                 lines={planner.grocery}
-                busy={planner.busy}
+                pending={planner.groceryPending}
                 onGenerate={planner.generateGroceryList}
               />
             </TabsContent>

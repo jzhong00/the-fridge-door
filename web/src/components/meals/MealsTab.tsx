@@ -8,7 +8,7 @@ import { TemplateGallery } from "./TemplateGallery";
 
 interface Props {
   state: AppState;
-  busy: boolean;
+  pending: boolean;
   onAddMeal: (name: string, servings: number) => void;
   onAddFromTemplate: (name: string) => void;
   onUpdateMeal: (id: number, name: string, servings: number) => void;
@@ -39,10 +39,10 @@ export function MealsTab(props: Props) {
   return (
     <div className="space-y-8">
       <div className="space-y-3">
-        <AddMealForm onAdd={props.onAddMeal} busy={props.busy} />
+        <AddMealForm onAdd={props.onAddMeal} pending={props.pending} />
         <TemplateGallery
           state={state}
-          busy={props.busy}
+          pending={props.pending}
           onAdd={props.onAddFromTemplate}
         />
       </div>
@@ -59,7 +59,7 @@ export function MealsTab(props: Props) {
               <MealRow
                 key={meal.id}
                 meal={meal}
-                busy={props.busy}
+                pending={props.pending}
                 onUpdate={props.onUpdateMeal}
                 onDelete={props.onDeleteMeal}
               />
@@ -72,7 +72,7 @@ export function MealsTab(props: Props) {
         <IngredientEditor
           state={state}
           meal={selected}
-          busy={props.busy}
+          pending={props.pending}
           onSelectMeal={setSelectedMealId}
           onAdd={props.onAddIngredient}
           onUpdate={props.onUpdateIngredient}

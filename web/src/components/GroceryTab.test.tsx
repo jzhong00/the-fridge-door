@@ -13,7 +13,7 @@ function renderTab(overrides = {}) {
   const props = {
     weekStart: "2026-08-03",
     lines,
-    busy: false,
+    pending: false,
     onGenerate: vi.fn(),
     ...overrides,
   };

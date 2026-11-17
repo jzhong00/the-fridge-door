@@ -7,10 +7,10 @@ import { Label } from "@/components/ui/label";
 
 export function AddMealForm({
   onAdd,
-  busy,
+  pending,
 }: {
   onAdd: (name: string, servings: number) => void;
-  busy: boolean;
+  pending: boolean;
 }) {
   const [name, setName] = useState("");
   // Held as text so the field can be cleared; coercing per keystroke made it
@@ -49,7 +49,7 @@ export function AddMealForm({
           onChange={(e) => setServings(e.target.value)}
         />
       </div>
-      <Button type="submit" disabled={busy || !name.trim()}>
+      <Button type="submit" disabled={pending || !name.trim()}>
         <Plus className="size-4" />
         Add meal
       </Button>

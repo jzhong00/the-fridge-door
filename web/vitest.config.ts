@@ -18,7 +18,7 @@ export default mergeConfig(
         reporter: ["text-summary", "text"],
         // Just under what was measured, so coverage cannot fall silently.
         // Raise these as tests are added; never lower them to pass a build.
-        thresholds: { statements: 72, branches: 66, functions: 62, lines: 75 },
+        thresholds: { statements: 79, branches: 81, functions: 70, lines: 81 },
       },
     },
   }),

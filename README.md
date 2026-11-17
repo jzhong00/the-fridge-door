@@ -32,9 +32,12 @@ web/ (React)  →  server/ (FastAPI)  →  app/ (domain)  →  Postgres / SQLite
 - **`server/`** translates HTTP to repository calls and contains no SQL. Domain
   errors map to status codes and RFC 9457 problem responses, so messages
   written for users surface verbatim.
-- **`web/`** renders and holds state. It loads a week in a single request and
-  works from memory afterwards. Built on shadcn/ui over Base UI primitives,
-  so dialogs, selects and tabs are accessible without hand-rolling them.
+- **`web/`** renders, and holds server state in TanStack Query. It loads a
+  week in a single request and works from memory afterwards: mutations patch
+  the cache from the API's response rather than refetching. The tab and week
+  live in the URL, so a refresh or a shared link opens the same view. Built on
+  shadcn/ui over Base UI primitives, so dialogs, selects and tabs are
+  accessible without hand-rolling them.
 
 Nothing above `Database` knows which backend is in use — swapping SQLite for
 Postgres is one environment variable.
@@ -94,7 +97,7 @@ meal-planner/
 │   └── src/
 │       ├── api/          #   Typed client and shared types
 │       ├── components/   #   The three views; ui/ holds shadcn primitives
-│       ├── hooks/        #   usePlanner: one week of state
+│       ├── hooks/        #   usePlanner: server state via TanStack Query
 │       └── lib/          #   Week arithmetic
 ├── migrations/           # Alembic revision history
 ├── tests/                # Python suite, run against SQLite and Postgres
