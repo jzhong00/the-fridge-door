@@ -108,6 +108,14 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # docs/openapi.json is checked against the API by pytest; this checks
+      # the TypeScript generated from it, so a contract change cannot ship
+      # with stale frontend types.
+      - name: Generated API types are current
+        run: |
+          npm run generate:api
+          git diff --exit-code -- src/api/schema.ts
+
       - name: Test with coverage
         run: npm run test:coverage
 

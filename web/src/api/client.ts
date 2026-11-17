@@ -8,9 +8,10 @@
 
 import type {
   AppState,
-  DayAssignment,
+  DayAssignmentWrite,
   GroceryLine,
   Meal,
+  Problem,
   WeekPlan,
 } from "./types";
 
@@ -66,7 +67,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 async function toApiError(response: Response): Promise<ApiError> {
   const requestId = response.headers?.get("X-Request-ID") ?? null;
   try {
-    const body = await response.json();
+    const body: Partial<Problem> | undefined = await response.json();
     const type = typeof body?.type === "string" ? body.type : null;
     if (typeof body?.detail === "string") {
       return new ApiError(response.status, body.detail, { type, requestId });
@@ -142,7 +143,7 @@ export const api = {
       method: "DELETE",
     }),
 
-  setPlan: (week: string, days: DayAssignment[]): Promise<WeekPlan> =>
+  setPlan: (week: string, days: DayAssignmentWrite[]): Promise<WeekPlan> =>
     request(`/api/plan/${week}`, {
       method: "PUT",
       body: JSON.stringify({ days }),

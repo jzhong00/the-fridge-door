@@ -22,7 +22,22 @@ class RequestSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class IngredientAmount(BaseModel):
+class ResponseSchema(BaseModel):
+    """Base for every response body.
+
+    Documented in serialization mode, where a field with a default is still
+    required: the server always sends it. Otherwise the generated TypeScript
+    would mark `meal_id` or `ingredients` optional, and every client read
+    would need a check for a value that is never missing.
+    """
+
+    model_config = ConfigDict(
+        json_schema_mode_override="serialization",
+        json_schema_serialization_defaults_required=True,
+    )
+
+
+class IngredientAmount(ResponseSchema):
     """One ingredient attached to a meal, with how much of it."""
 
     ingredient_id: int
@@ -31,7 +46,7 @@ class IngredientAmount(BaseModel):
     unit: str
 
 
-class MealRead(BaseModel):
+class MealRead(ResponseSchema):
     """A meal and everything needed to render it."""
 
     id: int
@@ -82,7 +97,7 @@ class IngredientUpdate(RequestSchema):
     unit: str = Field(default="", max_length=50)
 
 
-class DayAssignment(BaseModel):
+class _DayFields(BaseModel):
     """One day of a week. A null meal_id clears the day."""
 
     #: The enum, so an unknown day is a 422 rather than a stored row that
@@ -92,20 +107,25 @@ class DayAssignment(BaseModel):
     servings: int | None = Field(default=None, ge=1)
 
 
-class DayAssignmentWrite(DayAssignment, RequestSchema):
-    """A day as a client sends it: the same fields, but strict."""
+class DayAssignment(_DayFields, ResponseSchema):
+    """A day as the API returns it: every field present."""
+
+
+class DayAssignmentWrite(_DayFields, RequestSchema):
+    """A day as a client sends it: strict about unknown fields, lenient about
+    omitted ones, which default to a cleared day."""
 
 
 class WeekPlanWrite(RequestSchema):
     days: list[DayAssignmentWrite]
 
 
-class WeekPlanRead(BaseModel):
+class WeekPlanRead(ResponseSchema):
     week_start: date
     days: list[DayAssignment]
 
 
-class GroceryLine(BaseModel):
+class GroceryLine(ResponseSchema):
     """One shopping line. qty stays numeric so clients can sort or price it."""
 
     name: str
@@ -114,19 +134,19 @@ class GroceryLine(BaseModel):
     display: str
 
 
-class TemplateIngredientRead(BaseModel):
+class TemplateIngredientRead(ResponseSchema):
     name: str
     qty: float
     unit: str
 
 
-class TemplateRead(BaseModel):
+class TemplateRead(ResponseSchema):
     name: str
     servings: int
     ingredients: list[TemplateIngredientRead]
 
 
-class AppState(BaseModel):
+class AppState(ResponseSchema):
     """Everything the UI needs for one week, in a single response.
 
     The point of this endpoint is latency: the Streamlit version issued a

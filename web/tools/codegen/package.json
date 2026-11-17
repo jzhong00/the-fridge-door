@@ -1,0 +1,9 @@
+{
+  "name": "codegen",
+  "private": true,
+  "description": "Generates src/api/schema.ts from ../docs/openapi.json. Kept apart from the app's dependencies because openapi-typescript requires TypeScript 5 and the app is on 6.",
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

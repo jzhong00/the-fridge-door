@@ -36,6 +36,17 @@ Tests: `tests/test_api_conventions.py` (problem details section).
 (`extra="forbid"`), so an unknown or misspelt field is a 422 rather than
 silently dropped. Tests: strict requests section.
 
+**The OpenAPI document is the contract.** `docs/openapi.json` is exported
+from the app by `scripts/export_openapi.py`, and the frontend's types in
+`web/src/api/schema.ts` are generated from it; `web/src/api/types.ts` only
+gives them app-facing names. Both files are committed. A test fails if the
+document is stale, and CI fails if the generated TypeScript is. Responses
+inherit `ResponseSchema`, documented in serialization mode, so every field
+the server always sends is required in the generated types; requests inherit
+`RequestSchema`, where defaulted fields stay optional. Every error is
+documented as `Problem` in `application/problem+json`.
+Tests: `tests/test_openapi_contract.py`.
+
 **HTTP semantics.** Creating returns `201 Created` with a `Location` header
 that can be fetched. Deleting returns `204` with no body. Asking for a row
 that does not exist (or, after accounts, belongs to someone else) is a `404`.

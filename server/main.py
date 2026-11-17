@@ -15,7 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.migrations import upgrade_to_head
 from server.deps import get_database
 from server.observability import RequestContextMiddleware, configure_logging
-from server.problems import UnexpectedErrorMiddleware, install_problem_handlers
+from server.problems import (
+    UnexpectedErrorMiddleware,
+    document_problem_responses,
+    install_problem_handlers,
+)
 from server.routers import health, meals, plans, state
 
 configure_logging()
@@ -76,6 +80,7 @@ app.add_middleware(UnexpectedErrorMiddleware)
 app.add_middleware(RequestContextMiddleware)
 
 install_problem_handlers(app)
+document_problem_responses(app)
 
 app.include_router(health.router)
 app.include_router(state.router)

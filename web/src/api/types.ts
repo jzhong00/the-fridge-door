@@ -1,75 +1,34 @@
 /**
- * Types mirroring the Pydantic schemas in server/schemas.py.
+ * The API's types, under the names the app uses.
  *
- * Hand-written rather than generated so the frontend stays readable, but
- * they are checked against the live API by a test, so drift fails the build
- * rather than surfacing as undefined at runtime.
+ * Every type here is generated: `schema.ts` is produced from the committed
+ * OpenAPI document (docs/openapi.json), which is exported from the Pydantic
+ * models. After changing a model or route:
+ *
+ *     python scripts/export_openapi.py      (repo root)
+ *     npm run generate:api                  (web/)
+ *
+ * CI fails if either file is stale, so a renamed field or a changed
+ * nullability breaks the build instead of surfacing as `undefined`.
  */
 
-export const DAYS = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-] as const;
+import { type components, dayOfWeekValues } from "./schema";
 
-export type Day = (typeof DAYS)[number];
+type Schemas = components["schemas"];
 
-export interface IngredientAmount {
-  ingredient_id: number;
-  name: string;
-  qty: number;
-  unit: string;
-}
+/** The seven days, Monday first, exactly as the API's enum declares them. */
+export type Day = Schemas["DayOfWeek"];
+export const DAYS: readonly Day[] = dayOfWeekValues;
 
-export interface Meal {
-  id: number;
-  name: string;
-  servings: number;
-  ingredients: IngredientAmount[];
-}
-
-export interface DayAssignment {
-  /** The union, not `string`: the API rejects anything else with a 422, so
-   *  accepting a wider type here would only hide mistakes until runtime. */
-  day: Day;
-  meal_id: number | null;
-  servings: number | null;
-}
-
-export interface GroceryLine {
-  name: string;
-  qty: number;
-  unit: string;
-  /** Preformatted for display, e.g. "400 g" or "2". */
-  display: string;
-}
-
-export interface TemplateIngredient {
-  name: string;
-  qty: number;
-  unit: string;
-}
-
-export interface MealTemplate {
-  name: string;
-  servings: number;
-  ingredients: TemplateIngredient[];
-}
-
+export type IngredientAmount = Schemas["IngredientAmount"];
+export type Meal = Schemas["MealRead"];
+export type DayAssignment = Schemas["DayAssignment"];
+export type DayAssignmentWrite = Schemas["DayAssignmentWrite"];
+export type GroceryLine = Schemas["GroceryLine"];
+export type TemplateIngredient = Schemas["TemplateIngredientRead"];
+export type MealTemplate = Schemas["TemplateRead"];
 /** Everything needed to render one week, fetched in a single request. */
-export interface AppState {
-  week_start: string;
-  meals: Meal[];
-  ingredient_names: string[];
-  plan: DayAssignment[];
-  templates: MealTemplate[];
-}
-
-export interface WeekPlan {
-  week_start: string;
-  days: DayAssignment[];
-}
+export type AppState = Schemas["AppState"];
+export type WeekPlan = Schemas["WeekPlanRead"];
+/** The body of every error response (RFC 9457). */
+export type Problem = Schemas["Problem"];

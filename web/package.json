@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "generate:api": "npm --prefix tools/codegen ci --silent --no-audit --no-fund && tools/codegen/node_modules/.bin/openapi-typescript ../docs/openapi.json --enum-values --output src/api/schema.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

@@ -217,3 +217,48 @@ def install_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, _validation_error)
     app.add_exception_handler(StarletteHTTPException, _http_error)
     app.add_exception_handler(IntegrityError, _integrity_error)
+
+
+def document_problem_responses(app: FastAPI) -> None:
+    """Make the OpenAPI document tell the truth about errors.
+
+    FastAPI documents validation failures as its own ``HTTPValidationError``
+    in ``application/json``, which this API never returns. This replaces
+    every 4xx and 5xx response with ``Problem`` in
+    ``application/problem+json``, and adds a ``default`` response so the
+    statuses a route does not list (404, 409, 500) are covered too. The
+    generated TypeScript types then describe errors as the client sees them.
+    """
+    build = app.openapi
+
+    def openapi() -> dict:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = build()
+        problem_schema = Problem.model_json_schema(
+            ref_template="#/components/schemas/{model}"
+        )
+        components = schema.setdefault("components", {}).setdefault("schemas", {})
+        components.update(problem_schema.pop("$defs", {}))
+        components["Problem"] = problem_schema
+
+        problem_content = {
+            PROBLEM_MEDIA_TYPE: {"schema": {"$ref": "#/components/schemas/Problem"}}
+        }
+        for operations in schema.get("paths", {}).values():
+            for operation in operations.values():
+                responses = operation.setdefault("responses", {})
+                for code, response in responses.items():
+                    if code[0] in "45":
+                        response["content"] = problem_content
+                responses["default"] = {
+                    "description": "Problem Details (RFC 9457)",
+                    "content": problem_content,
+                }
+
+        for unused in ("HTTPValidationError", "ValidationError"):
+            components.pop(unused, None)
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = openapi  # type: ignore[method-assign]

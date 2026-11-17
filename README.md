@@ -171,9 +171,18 @@ CI runs both legs, the frontend suite, `ruff` for lint and formatting, and two
 migration checks: `alembic check` fails the build if a model change ships
 without a migration, and a downgrade proves each migration is reversible.
 
-One test compares the TypeScript interfaces in `web/src/api/types.ts` against
-the Pydantic schemas, so renaming a field on either side fails the build
-rather than surfacing as `undefined` in the browser.
+The frontend's types are generated, not hand-written. The OpenAPI document is
+exported to [`docs/openapi.json`](docs/openapi.json) and the TypeScript in
+`web/src/api/schema.ts` is generated from it with `openapi-typescript`. A test
+fails if the committed document no longer matches the API, and CI fails if the
+generated TypeScript is stale, so a renamed field or a changed nullability
+breaks the build rather than surfacing as `undefined` in the browser. After
+changing a model or route:
+
+```bash
+python scripts/export_openapi.py
+cd web && npm run generate:api
+```
 
 ## Migrations
 

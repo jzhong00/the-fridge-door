@@ -1,0 +1,4 @@
+# Generated from the API; collapsed in GitHub diffs and excluded from language
+# stats. Regenerate rather than edit (see web/src/api/types.ts).
+docs/openapi.json linguist-generated=true
+web/src/api/schema.ts linguist-generated=true
