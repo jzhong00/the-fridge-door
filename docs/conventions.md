@@ -109,10 +109,35 @@ Tests: `web/src/hooks/usePlanner.test.ts`, `web/src/App.test.tsx`.
   relationships to lazy-load.
 - Integer primary keys, and money as integer cents. Recipe quantities are
   floats because measurements are approximate.
+- Plural snake_case table names (`meals`, `weekly_plans`).
+- Every constraint is named by the metadata naming convention: `pk_<table>`,
+  `fk_<table>_<column>_<referred table>`, `uq_<table>_...`, `ck_<table>_<rule>`,
+  `ix_<table>_<column>`. A migration can then refer to any constraint by a
+  name it can predict.
+- Invariants live in the database as named constraints, not only in Python:
+  names unique per user ignoring case (a unique index on
+  `(user_id, lower(name))`), positive quantities and servings, weekdays only.
+  A read-then-write check in Python races under concurrency; a constraint
+  does not. Tests: `tests/test_schema_constraints.py`.
+- Every foreign key states its `ON DELETE` (even `NO ACTION`) and is indexed,
+  by its own index or as the leading column of another.
+- Every table has `created_at` and `updated_at`, `timestamptz`, defaulted by
+  the database so every writer gets them.
+- Every query filters by its owner: repositories are constructed with a
+  user and have no unscoped method. Lists have an explicit `ORDER BY`;
+  without one the database may return rows in any order (an index added in
+  the accounts migration made SQLite return meals alphabetically).
+- SQLite enforces foreign keys (`PRAGMA foreign_keys=ON` on every
+  connection), so local development behaves like Postgres.
+- New migrations use a dated revision id and explain themselves:
+  `alembic revision --rev-id 20261120_0001 -m "what changed"`, then a
+  docstring saying what changes, why, and how the upgrade can fail.
+  Migrations that move data are tested with data
+  (`tests/test_migrations.py`), not only from an empty database.
 
-Planned with the accounts migration: a constraint naming convention, plural
-table names, named check and unique constraints, indexed foreign keys,
-`created_at`/`updated_at` on every table, and a test that checks all of it.
+Tests: `tests/test_conventions.py` walks every table and checks all of the
+above. The schema itself is described in
+[database-schema.md](database-schema.md).
 
 ## Tests
 

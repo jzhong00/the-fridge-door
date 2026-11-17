@@ -108,10 +108,15 @@ meal-planner/
 
 ## Data model
 
-- **Meal** — `id`, `name`, `servings`, `created_at`.
-- **Ingredient** — `id`, `name`. Shared across every meal that uses it.
-- **MealIngredient** — join table pairing a meal with an ingredient, plus the `qty` and `unit` for that pairing.
-- **WeeklyPlan** — maps `(week_start_date, day_of_week)` to a `meal_id` and an optional planned `servings`, one row per day per week.
+Everything a person creates belongs to one row in `users`: their `meals`,
+their `ingredients` (each person's own, so the autocomplete never suggests a
+stranger's), the `meal_ingredients` pairing them with quantities, and their
+`weekly_plans`, one row per day per week. Names are unique per person
+ignoring case, quantities and servings are positive, and days are weekdays,
+all enforced by the database rather than only in Python.
+
+The full schema, an ER diagram, and what happens on delete are in
+[docs/database-schema.md](docs/database-schema.md).
 
 ## Setup
 

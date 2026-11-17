@@ -8,14 +8,41 @@ There are no ORM ``Relationship`` declarations. Every read that needs a
 meal with its ingredients is an explicit join in
 :mod:`app.repositories`, which is what keeps a week's grocery list to one
 query instead of lazy-loading one per row.
+
+Database conventions (see docs/conventions.md): plural snake_case table
+names; every constraint named through the metadata naming convention;
+invariants enforced by named check and unique constraints rather than only
+in Python; every foreign key indexed and given a deliberate ``ondelete``;
+``created_at`` and ``updated_at`` on every table, set by the database.
+tests/test_conventions.py holds the schema to all of this.
 """
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
-from sqlalchemy import DateTime, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    func,
+    text,
+    true,
+)
 from sqlmodel import Field, SQLModel
+
+#: Gives every constraint and index a stable, predictable name, so a
+#: migration can refer to one by name and the database never invents its
+#: own (Postgres would say `meal_pkey`, SQLite nothing at all).
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+SQLModel.metadata.naming_convention = NAMING_CONVENTION
 
 
 class _HasId(Protocol):
@@ -48,57 +75,203 @@ class DayOfWeek(StrEnum):
     SUNDAY = "Sunday"
 
 
-class MealIngredient(SQLModel, table=True):
-    """Pairs a meal with an ingredient, and how much of it."""
+def _timestamp(*, onupdate: bool = False) -> Any:
+    """A timezone-aware timestamp the database fills in.
 
-    meal_id: int | None = Field(default=None, foreign_key="meal.id", primary_key=True)
-    ingredient_id: int | None = Field(
-        default=None, foreign_key="ingredient.id", primary_key=True
-    )
-
-    qty: float | None = None
-    unit: str | None = None
-
-
-class Meal(SQLModel, table=True):
-    """A recipe: a name, the servings it yields, and its ingredients."""
-
-    id: int | None = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
-    servings: int = 1
-    # sa_type is explicit because the default maps to a naive column, and
-    # Postgres would then drop the UTC offset. Invisible on SQLite.
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
+    A server default rather than a Python one, so a row inserted by any
+    writer - a migration, a script, psql - gets one too.
+    """
+    return Field(
+        default=None,
+        sa_column_kwargs={
+            "server_default": func.now(),
+            "nullable": False,
+            **({"onupdate": func.now()} if onupdate else {}),
+        },
         # SQLModel's annotation only admits a type here, but an instance is
         # what carries timezone=True, and SQLModel accepts one at runtime.
         sa_type=DateTime(timezone=True),  # pyright: ignore[reportArgumentType]
     )
 
 
-class Ingredient(SQLModel, table=True):
-    """A shopping item, shared across every meal that uses it."""
-
-    id: int | None = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
+class _Timestamps(SQLModel):
+    created_at: datetime | None = _timestamp()
+    updated_at: datetime | None = _timestamp(onupdate=True)
 
 
-class WeeklyPlan(SQLModel, table=True):
-    """The meal assigned to one day of one week.
+class User(_Timestamps, table=True):
+    """Someone using the app.
 
-    Keyed by (week_start_date, day_of_week), so planning next week never
-    overwrites this one.
+    Three kinds, told apart by these columns rather than a type column:
+
+    - a **guest** (`is_guest`): no credentials, identified only by a session
+      cookie, deleted after a period without a visit;
+    - an **account** (email and password hash): a guest who signed up keeps
+      the same row, so everything they made comes with them;
+    - an **unclaimed owner** (neither): the account the accounts migration
+      gave the data that existed before accounts. Not a guest, so it is never
+      cleaned up; it gains credentials when claimed.
     """
 
+    __tablename__: str = "users"  # pyright: ignore[reportIncompatibleVariableOverride]
     __table_args__ = (
-        UniqueConstraint(
-            "week_start_date", "day_of_week", name="uq_weeklyplan_week_day"
+        # Case-insensitively unique: "Riley@x.com" and "riley@x.com" are one
+        # person. NULLs (guests) do not collide with each other.
+        Index("uq_users_lower_email", text("lower(email)"), unique=True),
+        CheckConstraint(
+            "(email IS NULL) = (password_hash IS NULL)", name="credentials_complete"
+        ),
+        CheckConstraint("NOT is_guest OR email IS NULL", name="guests_have_no_email"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    #: NULL for guests and the unclaimed owner.
+    email: str | None = None
+    #: NULL exactly when email is.
+    password_hash: str | None = None
+    is_guest: bool = Field(default=True, sa_column_kwargs={"server_default": true()})
+    #: Drives guest cleanup.
+    last_seen_at: datetime | None = _timestamp()
+
+
+class Session(_Timestamps, table=True):
+    """A signed-in browser. The cookie holds a random token; only its
+    SHA-256 is stored, so a copy of this table cannot be replayed."""
+
+    __tablename__: str = "sessions"  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    token_hash: str = Field(primary_key=True)
+    user_id: int = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
+    expires_at: datetime = Field(
+        sa_type=DateTime(timezone=True),  # pyright: ignore[reportArgumentType]
+        index=True,
+    )
+
+
+class Meal(_Timestamps, table=True):
+    """A recipe: a name, the servings it yields, and its ingredients."""
+
+    __tablename__: str = "meals"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        # Unique per person, ignoring case: two people can both have
+        # "Spaghetti Bolognese", one person cannot have it twice. Its leading
+        # column also serves every lookup by owner.
+        Index(
+            "uq_meals_user_id_lower_name", "user_id", text("lower(name)"), unique=True
+        ),
+        CheckConstraint("servings >= 1", name="servings_positive"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
+    name: str
+    servings: int = 1
+
+
+class Ingredient(_Timestamps, table=True):
+    """A shopping item in one person's kitchen, shared by their meals.
+
+    Per person rather than global: a shared table would let one person's
+    spelling become everyone's, and would suggest strangers' ingredients in
+    the autocomplete.
+    """
+
+    __tablename__: str = "ingredients"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        Index(
+            "uq_ingredients_user_id_lower_name",
+            "user_id",
+            text("lower(name)"),
+            unique=True,
         ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    week_start_date: date = Field(index=True)
-    day_of_week: str = Field(index=True)
-    meal_id: int | None = Field(default=None, foreign_key="meal.id")
+    user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
+    name: str
+
+
+class MealIngredient(_Timestamps, table=True):
+    """Pairs a meal with an ingredient, and how much of it."""
+
+    __tablename__: str = "meal_ingredients"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (CheckConstraint("qty > 0", name="qty_positive"),)
+
+    #: Deleting a meal deletes its ingredient lines with it.
+    meal_id: int = Field(foreign_key="meals.id", ondelete="CASCADE", primary_key=True)
+    #: An ingredient still on a meal cannot be deleted out from under it.
+    #: NO ACTION, not RESTRICT: RESTRICT is checked the moment a row goes,
+    #: so deleting an account - which cascades to its meals and ingredients
+    #: in whatever order the database picks - failed on SQLite whenever the
+    #: ingredients went first. NO ACTION is checked at the end of the
+    #: statement, by which time the meal's lines are gone too.
+    #: Declared through SQLAlchemy because SQLModel's `ondelete` only admits
+    #: CASCADE, SET NULL and RESTRICT.
+    ingredient_id: int = Field(
+        sa_column_args=[ForeignKey("ingredients.id", ondelete="NO ACTION")],
+        primary_key=True,
+        index=True,
+    )
+    qty: float
+    #: Empty for count-based items ("2 onions").
+    unit: str = Field(default="", sa_column_kwargs={"server_default": ""})
+
+
+class WeeklyPlan(_Timestamps, table=True):
+    """The meal assigned to one day of one week, for one person.
+
+    Keyed by (user, week, day), so planning next week never overwrites this
+    one and two people can both plan a Monday. A row with no meal is a day
+    deliberately cleared, as distinct from a day never set (no row).
+    """
+
+    __tablename__: str = "weekly_plans"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __table_args__ = (
+        Index(
+            "uq_weekly_plans_user_id_week_start_date_day_of_week",
+            "user_id",
+            "week_start_date",
+            "day_of_week",
+            unique=True,
+        ),
+        CheckConstraint(
+            "day_of_week IN (" + ", ".join(f"'{day.value}'" for day in DayOfWeek) + ")",
+            name="day_of_week_valid",
+        ),
+        CheckConstraint("servings IS NULL OR servings >= 1", name="servings_positive"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
+    week_start_date: date
+    day_of_week: str
+    #: Deleting a meal clears the days it was planned on, keeping the row.
+    meal_id: int | None = Field(
+        default=None, foreign_key="meals.id", ondelete="SET NULL", index=True
+    )
     #: Servings planned for this day. None means use the recipe unscaled.
     servings: int | None = None
+
+
+#: Every table, so callers needing the full list do not have to keep one.
+ALL_TABLES: tuple[type[SQLModel], ...] = (
+    User,
+    Session,
+    Meal,
+    Ingredient,
+    MealIngredient,
+    WeeklyPlan,
+)
+
+__all__ = [
+    "ALL_TABLES",
+    "NAMING_CONVENTION",
+    "DayOfWeek",
+    "Ingredient",
+    "Meal",
+    "MealIngredient",
+    "Session",
+    "User",
+    "WeeklyPlan",
+    "persisted_id",
+]

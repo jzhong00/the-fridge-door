@@ -19,6 +19,9 @@ def _alembic_config(url: str) -> Config:
     # Alembic stores options in a configparser, where % starts an
     # interpolation token; Postgres passwords are often percent-encoded.
     config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    # Read by migrations/env.py in preference to the environment, so the URL
+    # passed here is the database migrated, not whatever the env var says.
+    config.attributes["database_url"] = url
     return config
 
 
@@ -38,3 +41,13 @@ def stamp_head(url: str) -> None:
     startup upgrade would try to create tables that already exist.
     """
     command.stamp(_alembic_config(url), "head")
+
+
+def upgrade_to(url: str, revision: str) -> None:
+    """Upgrade to a specific revision. For migration tests."""
+    command.upgrade(_alembic_config(url), revision)
+
+
+def downgrade_to(url: str, revision: str) -> None:
+    """Downgrade to a specific revision. For migration tests."""
+    command.downgrade(_alembic_config(url), revision)
