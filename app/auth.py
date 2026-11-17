@@ -30,11 +30,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlmodel import Session
 
 from app import events
+from app.db import act_as
 from app.exceptions import (
     AlreadySignedUpError,
     EmailTakenError,
@@ -55,6 +56,7 @@ from app.ratelimit import (
     subject,
 )
 from app.repositories import SessionRepository, UserRepository
+from app.samples import add_samples
 from app.security import (
     check_password_policy,
     hash_password,
@@ -124,6 +126,7 @@ class AuthService:
     ) -> None:
         if now.tzinfo is None:
             raise ValueError("now must be timezone-aware")
+        self._session = session
         self._users = UserRepository(session)
         self._sessions = SessionRepository(session)
         self._limits = RateLimiter(session, now=now)
@@ -156,8 +159,12 @@ class AuthService:
 
     # --- Starting and ending sessions ---------------------------------------
 
-    def start_guest(self) -> SignedIn:
-        """A new account with no credentials, and a session for it."""
+    def start_guest(self, sample_week: date | None = None) -> SignedIn:
+        """A new account with no credentials, and a session for it.
+
+        With `sample_week`, the account starts with sample meals planned in
+        that week (app/samples.py), so the first screen has something on it.
+        """
         network = subject("network", self._network)
         self._refuse_if_throttled(
             GUESTS_PER_NETWORK,
@@ -167,6 +174,12 @@ class AuthService:
         )
         user = self._users.create(is_guest=True)
         self._limits.record(GUESTS_PER_NETWORK, network)
+        if sample_week is not None:
+            # From here the transaction acts as the new guest, so the
+            # samples are written through row-level security like any other
+            # of their writes.
+            act_as(self._session, persisted_id(user))
+            add_samples(self._session, persisted_id(user), sample_week)
         events.record("guest_started", user_id=persisted_id(user))
         return self._start_session(user)
 

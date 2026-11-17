@@ -7,8 +7,9 @@ between the cookie and AuthService.
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Body, Response, status
 
 from app.auth import CurrentUser, SignedIn
 from server.deps import (
@@ -17,7 +18,7 @@ from server.deps import (
     CurrentUserDep,
     OptionalUserDep,
 )
-from server.schemas import Account, Credentials
+from server.schemas import Account, Credentials, GuestStart
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -63,17 +64,24 @@ def _signed_in(response: Response, result: SignedIn) -> Account:
     status_code=status.HTTP_201_CREATED,
     responses={200: {"model": Account, "description": "Already signed in."}},
 )
-def start_guest(response: Response, auth: AuthDep, current: OptionalUserDep) -> Account:
+def start_guest(
+    response: Response,
+    auth: AuthDep,
+    current: OptionalUserDep,
+    payload: Annotated[GuestStart | None, Body()] = None,
+) -> Account:
     """Start a guest session: a real account with no email or password.
 
     The app calls this when a request comes back 401, so a first visit
-    lands straight in a working planner. A caller who is already signed in
-    gets their own account back (200) rather than a second one.
+    lands straight in a working planner, with sample meals if it asks for
+    them. A caller who is already signed in gets their own account back
+    (200) rather than a second one.
     """
     if current is not None:
         response.status_code = status.HTTP_200_OK
         return _account(current)
-    return _signed_in(response, auth.start_guest())
+    sample_week = payload.sample_week if payload is not None else None
+    return _signed_in(response, auth.start_guest(sample_week))
 
 
 @router.post("/signup")

@@ -1,16 +1,23 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
-import { api } from "@/api/client";
+import { ApiError, api } from "@/api/client";
 import { createQueryClient } from "@/api/queryClient";
 import { makeMeal, makeState } from "@/test/factories";
 
 vi.mock("@/api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/client")>()),
-  api: { getState: vi.fn(), getPlan: vi.fn() },
+  api: {
+    getState: vi.fn(),
+    getPlan: vi.fn(),
+    me: vi.fn(),
+    signUp: vi.fn(),
+    logIn: vi.fn(),
+    logOut: vi.fn(),
+  },
 }));
 
 const mocked = vi.mocked(api);
@@ -21,6 +28,7 @@ beforeEach(() => {
   mocked.getState.mockImplementation(async (week: string) =>
     makeState({ week_start: week, meals: [makeMeal({ id: 1, name: "Spaghetti" })] }),
   );
+  mocked.me.mockResolvedValue({ email: null, is_guest: true });
 });
 
 async function renderApp(path = "/") {
@@ -75,5 +83,84 @@ describe("loading", () => {
 
     expect(mocked.getState).toHaveBeenCalledWith("2026-08-03");
     expect(screen.getByLabelText("Week starting")).toHaveValue("2026-08-03");
+  });
+});
+
+describe("the account", () => {
+  it("invites a guest to sign up, and keeps their meals when they do", async () => {
+    const user = userEvent.setup();
+    mocked.signUp.mockResolvedValue({ email: "cook@example.com", is_guest: false });
+    await renderApp();
+
+    await user.click(await screen.findByRole("button", { name: "Sign up to keep your meals" }));
+    const dialog = screen.getByRole("dialog", { name: "Create an account" });
+    await user.type(within(dialog).getByLabelText("Email"), "cook@example.com");
+    await user.type(within(dialog).getByLabelText("Password"), "lettuce harbour spoon");
+    await user.click(within(dialog).getByRole("button", { name: "Create account" }));
+
+    expect(mocked.signUp).toHaveBeenCalledWith("cook@example.com", "lettuce harbour spoon");
+    expect(await screen.findByText("cook@example.com")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Same account, same meals: nothing is refetched.
+    expect(mocked.getState).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("article", { name: "Spaghetti" })).toBeInTheDocument();
+  });
+
+  it("shows the server's reason when signing up fails, and stays open", async () => {
+    const user = userEvent.setup();
+    mocked.signUp.mockRejectedValue(
+      new ApiError(422, "That password is one of the most common."),
+    );
+    await renderApp();
+
+    await user.click(await screen.findByRole("button", { name: "Sign up to keep your meals" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Email"), "cook@example.com");
+    await user.type(within(dialog).getByLabelText("Password"), "password1");
+    await user.click(within(dialog).getByRole("button", { name: "Create account" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "That password is one of the most common.",
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("loads the account's own meals after logging in", async () => {
+    const user = userEvent.setup();
+    mocked.logIn.mockImplementation(async () => {
+      const account = { email: "cook@example.com", is_guest: false };
+      mocked.me.mockResolvedValue(account);
+      mocked.getState.mockImplementation(async (week: string) =>
+        makeState({ week_start: week, meals: [makeMeal({ id: 9, name: "Their Curry" })] }),
+      );
+      return account;
+    });
+    await renderApp();
+
+    await user.click(await screen.findByRole("button", { name: "Log in" }));
+    const dialog = screen.getByRole("dialog", { name: "Log in" });
+    await user.type(within(dialog).getByLabelText("Email"), "cook@example.com");
+    await user.type(within(dialog).getByLabelText("Password"), "lettuce harbour spoon");
+    await user.click(within(dialog).getByRole("button", { name: "Log in" }));
+
+    expect(await screen.findByRole("article", { name: "Their Curry" })).toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Spaghetti" })).not.toBeInTheDocument();
+    expect(await screen.findByText("cook@example.com")).toBeInTheDocument();
+  });
+
+  it("starts over as a guest after logging out", async () => {
+    const user = userEvent.setup();
+    mocked.me.mockResolvedValue({ email: "cook@example.com", is_guest: false });
+    mocked.logOut.mockImplementation(async () => {
+      mocked.me.mockResolvedValue({ email: null, is_guest: true });
+    });
+    await renderApp();
+
+    await user.click(await screen.findByRole("button", { name: "Log out" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Sign up to keep your meals" }),
+    ).toBeInTheDocument();
+    expect(mocked.getState).toHaveBeenCalledTimes(2);
   });
 });

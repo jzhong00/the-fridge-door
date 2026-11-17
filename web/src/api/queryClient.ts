@@ -10,6 +10,8 @@
 import { QueryClient } from "@tanstack/react-query";
 
 export const queryKeys = {
+  /** Who is signed in. */
+  account: ["account"] as const,
   /** Meals, ingredient names and templates: everything not tied to a week. */
   library: ["library"] as const,
   plans: ["plan"] as const,

@@ -6,7 +6,9 @@
  * the local server, and in production Vercel serves both from one origin.
  */
 
+import { mondayOf } from "../lib/dates";
 import type {
+  Account,
   AppState,
   DayAssignmentWrite,
   GroceryLine,
@@ -43,10 +45,24 @@ export class ApiError extends Error {
 const NOT_SIGNED_IN = "urn:meal-planner:problem:not-signed-in";
 
 let guestSession: Promise<void> | null = null;
+const guestSessionListeners = new Set<() => void>();
+
+/**
+ * Be told whenever a guest session has been started because a request found
+ * itself signed out. On a first visit that is expected; mid-session it means
+ * the old session ended, and anything cached belonged to it.
+ * Returns a function that stops listening.
+ */
+export function onGuestSessionStarted(listener: () => void): () => void {
+  guestSessionListeners.add(listener);
+  return () => guestSessionListeners.delete(listener);
+}
 
 /**
  * Start a guest session: a real account with no email or password, so a
- * first visit lands in a working planner instead of a sign-in wall.
+ * first visit lands in a working planner instead of a sign-in wall, with
+ * sample meals planned in this week (the browser's week, since the server
+ * cannot know the visitor's time zone).
  *
  * Shared by every request that finds itself signed out at the same moment,
  * so a page load firing several requests starts one session, not one each.
@@ -54,15 +70,30 @@ let guestSession: Promise<void> | null = null;
  * and the server answers that with the same account rather than another.
  */
 function startGuestSession(): Promise<void> {
-  guestSession ??= fetch("/api/auth/guest", { method: "POST" })
+  guestSession ??= fetch("/api/auth/guest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sample_week: mondayOf(new Date()) }),
+  })
     .then(async (response) => {
       if (!response.ok) throw await toApiError(response);
+      for (const listener of guestSessionListeners) listener();
     })
     .finally(() => {
       guestSession = null;
     });
   return guestSession;
 }
+
+const SAFE_METHODS = new Set(["GET", "HEAD"]);
+/** Signing in and out decide the session themselves; a 401 from one of
+ *  these is an answer, not a reason to start a guest session. */
+const SESSION_ROUTES = new Set([
+  "/api/auth/guest",
+  "/api/auth/signup",
+  "/api/auth/login",
+  "/api/auth/logout",
+]);
 
 async function request<T>(
   path: string,
@@ -76,12 +107,23 @@ async function request<T>(
 
   if (!response.ok) {
     const error = await toApiError(response);
-    // Signed out (first visit, or a session that expired): start a guest
-    // session and try once more. Never for the sign-in routes themselves,
-    // and never twice, so a server that keeps refusing cannot cause a loop.
-    if (error.type === NOT_SIGNED_IN && !retried && !path.startsWith("/api/auth/")) {
+    // Signed out (first visit, or a session that ended): start a guest
+    // session. Never for the routes that sign in and out, and never twice,
+    // so a server that keeps refusing cannot cause a loop.
+    if (error.type === NOT_SIGNED_IN && !retried && !SESSION_ROUTES.has(path)) {
       await startGuestSession();
-      return request<T>(path, init, { retried: true });
+      // A read is simply asked again. A change is not: it was meant for
+      // the account whose session ended, and replaying it would quietly
+      // save it into a brand-new guest account instead.
+      if (SAFE_METHODS.has((init?.method ?? "GET").toUpperCase())) {
+        return request<T>(path, init, { retried: true });
+      }
+      throw new ApiError(
+        401,
+        "Your session had ended, so that change wasn't saved. " +
+          "You're now in a new guest session; log in to get back to your account.",
+        { type: NOT_SIGNED_IN, requestId: error.requestId },
+      );
     }
     throw error;
   }
@@ -102,9 +144,12 @@ async function request<T>(
  */
 async function toApiError(response: Response): Promise<ApiError> {
   const requestId = response.headers?.get("X-Request-ID") ?? null;
+  // Kept even when there is no usable detail: code branches on the type
+  // (a 401 that means "not signed in"), whatever the message says.
+  let type: string | null = null;
   try {
     const body: Partial<Problem> | undefined = await response.json();
-    const type = typeof body?.type === "string" ? body.type : null;
+    type = typeof body?.type === "string" ? body.type : null;
     if (typeof body?.detail === "string") {
       return new ApiError(response.status, body.detail, { type, requestId });
     }
@@ -119,6 +164,7 @@ async function toApiError(response: Response): Promise<ApiError> {
     // Body was not JSON; fall through to the status-based message.
   }
   return new ApiError(response.status, `Request failed (${response.status}).`, {
+    type,
     requestId,
   });
 }
@@ -190,4 +236,22 @@ export const api = {
 
   getGroceryList: (week: string): Promise<GroceryLine[]> =>
     request(`/api/grocery-list/${week}`),
+
+  /** Who is signed in. Signed out, this starts a guest session first. */
+  me: (): Promise<Account> => request("/api/auth/me"),
+
+  /** Create an account; a guest becomes it, keeping their meals. */
+  signUp: (email: string, password: string): Promise<Account> =>
+    request("/api/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+
+  logIn: (email: string, password: string): Promise<Account> =>
+    request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+
+  logOut: (): Promise<void> => request("/api/auth/logout", { method: "POST" }),
 };

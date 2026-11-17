@@ -12,6 +12,7 @@ over a FastAPI backend, backed by Postgres.
 
 ## Features
 
+- **Start straight away** — a first visit opens as a guest with three sample meals planned on four days of the current week, so the grocery list has something to show. Signing up keeps everything; logging in on another device brings it back.
 - **Meals** — create meals with a serving size, edit or delete them (deleting asks for confirmation, since it also removes ingredients and unassigns planned days).
 - **Ingredients** — attach quantities and units, with autocomplete over ingredients already used. Names match case-insensitively, so "Eggs" and "eggs" stay one item rather than splitting the shopping list.
 - **Quick-add templates** — ~18 common meals with typical ingredients already filled in.

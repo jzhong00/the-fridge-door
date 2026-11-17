@@ -180,3 +180,10 @@ class Account(ResponseSchema):
 
     email: str | None
     is_guest: bool
+
+
+class GuestStart(RequestSchema):
+    """Optional: ask for sample meals, planned in the week containing this
+    date (the browser's own week, since the server cannot know its zone)."""
+
+    sample_week: date | None = None

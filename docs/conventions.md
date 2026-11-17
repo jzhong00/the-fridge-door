@@ -111,8 +111,18 @@ Tests: request correlation and logging sections.
   lives in the URL, written with `replaceState` so the back button is not
   filled with every week visited. Unknown values fall back to a default.
 - Types come from the generated API contract (see API above).
+- The cache belongs to one account. Whenever the account on screen changes
+  (log in, log out, a session ending mid-use) every query is reset and
+  refetched; signing up is the exception, since a guest keeps their row.
+- A `not-signed-in` answer starts a guest session (`api/client.ts`). Reads
+  are then retried; writes are not, because replaying one would save it
+  into a brand-new guest account. The person is told the change was not
+  saved instead.
+- Meal cards are `<article aria-label={name}>`, so tests and assistive tech
+  find a meal by name rather than by text that may repeat.
 
-Tests: `web/src/hooks/usePlanner.test.ts`, `web/src/App.test.tsx`.
+Tests: `web/src/hooks/usePlanner.test.ts`, `web/src/hooks/useAccount.test.tsx`,
+`web/src/App.test.tsx`, `web/src/api/client.test.ts`.
 
 ## Database
 
