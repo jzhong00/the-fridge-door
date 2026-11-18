@@ -129,7 +129,7 @@ describe("weeks already visited", () => {
 
     act(() => result.current.setWeek("2026-08-31"));
     await waitFor(() => expect(mocked.getPlan).toHaveBeenCalledTimes(1));
-    await act(() => result.current.savePlan(plan(1)));
+    await act(() => result.current.savePlan("2026-08-31", plan(1)));
 
     act(() => result.current.setWeek("2026-08-24"));
     act(() => result.current.setWeek("2026-08-31"));
@@ -137,6 +137,29 @@ describe("weeks already visited", () => {
     await waitFor(() => expect(result.current.state?.plan[0].meal_id).toBe(1));
     // Still one fetch: the cache was corrected in place, not invalidated.
     expect(mocked.getPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves the week it is told to, whatever week is on screen", async () => {
+    const { result } = await renderPlanner();
+    mocked.setPlan.mockImplementation(async (week: string) => ({ week_start: week, days: [] }));
+
+    act(() => result.current.setWeek("2026-08-31"));
+    await act(() => result.current.savePlan("2026-08-24", []));
+
+    expect(mocked.setPlan).toHaveBeenCalledWith("2026-08-24", []);
+  });
+
+  it("resolves a failed save with null, and reports why", async () => {
+    const { result } = await renderPlanner();
+    mocked.setPlan.mockRejectedValue(new ApiError(404, "No meal with id 9."));
+
+    let saved: unknown = "not yet";
+    await act(async () => {
+      saved = await result.current.savePlan("2026-08-24", []);
+    });
+
+    expect(saved).toBeNull();
+    expect(result.current.error).toBe("No meal with id 9.");
   });
 
   it("files a slow save under the week it was saved for", async () => {
@@ -151,7 +174,7 @@ describe("weeks already visited", () => {
     );
 
     act(() => {
-      void result.current.savePlan(plan(1));
+      void result.current.savePlan("2026-08-24", plan(1));
     });
     act(() => result.current.setWeek("2026-08-31"));
     await waitFor(() =>
@@ -274,7 +297,7 @@ describe("pending work and errors", () => {
     );
 
     act(() => {
-      void result.current.savePlan([]);
+      void result.current.savePlan("2026-08-24", []);
     });
     await waitFor(() => expect(result.current.planPending).toBe(true));
     // Saving the plan must not freeze meal editing.

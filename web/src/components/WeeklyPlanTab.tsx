@@ -1,271 +1,133 @@
-import { CopyIcon } from "lucide-react";
-import { useState } from "react";
+import { Check, CopyIcon, LoaderCircle, TriangleAlert, Undo2 } from "lucide-react";
 
-import type { AppState, Day, DayAssignment, Meal } from "@/api/types";
+import type { AppState, DayAssignment, Meal, WeekPlan } from "@/api/types";
 import { DAYS } from "@/api/types";
+import { DayCard } from "@/components/plan/DayCard";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { formatDate } from "@/lib/dates";
-
-/** A hue per day, so a filled week reads at a glance. */
-const DAY_ACCENT: Record<Day, string> = {
-  Monday: "bg-mon",
-  Tuesday: "bg-tue",
-  Wednesday: "bg-wed",
-  Thursday: "bg-thu",
-  Friday: "bg-fri",
-  Saturday: "bg-sat",
-  Sunday: "bg-sun",
-};
-
-const UNSET = "unset";
+import { useAutoSavedPlan } from "@/hooks/useAutoSavedPlan";
+import { addDays, fromIso, toIso } from "@/lib/dates";
 
 interface Props {
   state: AppState;
   pending: boolean;
-  onSave: (days: DayAssignment[]) => void;
-  onCopyPrevious: () => void;
+  onSave: (weekStart: string, days: DayAssignment[]) => Promise<WeekPlan | null>;
+  onCopyPrevious: (weekStart: string) => Promise<WeekPlan | null>;
+  /** Resolve with the new meal, or null if it could not be made. */
+  onCreateMeal: (name: string, servings: number) => Promise<Meal | null>;
 }
 
-export function WeeklyPlanTab({ state, pending, onSave, onCopyPrevious }: Props) {
-  // The draft lives in the browser: editing a day is instant, and nothing
-  // reaches the network until Save.
-  const [draft, setDraft] = useState<Record<Day, DayAssignment>>(() =>
-    buildDraft(state),
-  );
-
-  // Re-seed when the server plan changes. Adjusting state during render
-  // rather than in an effect, so a stale draft never reaches the DOM.
-  const [seededFrom, setSeededFrom] = useState(state.plan);
-  if (seededFrom !== state.plan) {
-    setSeededFrom(state.plan);
-    setDraft(buildDraft(state));
-  }
-
+/**
+ * The week, a card per day. Click a day, type a few letters, Enter: the
+ * meal is planned and saved. Every change can be undone.
+ */
+export function WeeklyPlanTab({ state, pending, onSave, onCopyPrevious, onCreateMeal }: Props) {
+  const week = state.week_start;
+  const plan = useAutoSavedPlan({ weekStart: week, plan: state.plan, save: onSave });
   const mealsById = new Map(state.meals.map((m) => [m.id, m]));
-  const dirty = DAYS.some((day) => !sameAssignment(draft[day], state.plan, day));
+  const plannedIds = new Set(
+    DAYS.map((day) => plan.draft[day].meal_id).filter((id): id is number => id !== null),
+  );
+  const filled = DAYS.filter((day) => plan.draft[day].meal_id !== null).length;
+  const todayIso = toIso(new Date());
 
-  const update = (day: Day, patch: Partial<DayAssignment>) =>
-    setDraft((current) => ({ ...current, [day]: { ...current[day], ...patch } }));
-
-  if (state.meals.length === 0) {
-    return (
-      <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-        Add a meal first, then you can plan your week.
-      </p>
+  const pick = (day: (typeof DAYS)[number], meal: Meal) =>
+    plan.setDay(
+      day,
+      // A day keeps the servings it had; a new day starts at the recipe's.
+      { meal_id: meal.id, servings: plan.draft[day].servings ?? meal.servings },
+      `${meal.name} on ${day}`,
     );
-  }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">
-            Week of {formatDate(state.week_start)}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Pick a meal for each day, then save.
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <p>
+            <span className="font-semibold tabular-nums">{filled}</span>
+            <span className="text-muted-foreground"> of 7 nights planned</span>
           </p>
+          <SaveState status={plan.status} />
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" disabled={pending} onClick={onCopyPrevious}>
-            <CopyIcon className="size-4" />
-            Copy previous week
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {plan.change && (
+            <Button variant="ghost" onClick={plan.undo} aria-label={`Undo ${plan.change.label}`}>
+              <Undo2 aria-hidden />
+              Undo
+            </Button>
+          )}
           <Button
-            disabled={pending || !dirty}
-            onClick={() => onSave(Object.values(draft))}
+            variant="outline"
+            disabled={pending || plan.status === "saving"}
+            onClick={async () => {
+              const before = plan.draft;
+              if (await onCopyPrevious(week)) plan.remember(before, "copying last week");
+            }}
           >
-            Save plan
+            <CopyIcon aria-hidden />
+            Copy last week
           </Button>
         </div>
       </div>
 
-      {/* Column-flow so the week reads Mon-Thu down the left and Fri-Sun down
-          the right, rather than zig-zagging across two columns. */}
-      <div className="grid gap-2 xl:grid-flow-col xl:grid-cols-2 xl:grid-rows-4">
-        {DAYS.map((day) => (
-          <DayRow
-            key={day}
-            day={day}
-            assignment={draft[day]}
-            meals={state.meals}
-            mealsById={mealsById}
-            onChange={(patch) => update(day, patch)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DayRow({
-  day,
-  assignment,
-  meals,
-  mealsById,
-  onChange,
-}: {
-  day: Day;
-  assignment: DayAssignment;
-  meals: Meal[];
-  mealsById: Map<number, Meal>;
-  onChange: (patch: Partial<DayAssignment>) => void;
-}) {
-  const mealId = assignment.meal_id;
-  const assigned = mealId !== null;
-
-  return (
-    <div
-      className={`flex items-stretch gap-3 overflow-hidden rounded-xl border bg-card p-3 transition-colors ${
-        assigned ? "border-border" : "border-dashed bg-card/40"
-      }`}
-    >
-      <span
-        aria-hidden
-        className={`w-1 shrink-0 rounded-full ${
-          assigned ? DAY_ACCENT[day] : "bg-border"
-        }`}
-      />
-
-      {/* Wraps rather than squeezing the meal name: on a narrow screen the
-          servings field drops to a second line instead. */}
-      <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-2">
-        <p
-          className={`w-24 shrink-0 text-sm font-semibold ${
-            assigned ? "text-foreground" : "text-muted-foreground"
-          }`}
-        >
-          {day}
-        </p>
-
-        <Select
-          value={mealId === null ? UNSET : String(mealId)}
-          onValueChange={(value) => {
-            const nextId = value === UNSET ? null : Number(value);
-            onChange({
-              meal_id: nextId,
-              // Default to the recipe's own serving size.
-              servings:
-                nextId === null
-                  ? null
-                  : (assignment.servings ??
-                    mealsById.get(nextId)?.servings ??
-                    1),
-            });
-          }}
-        >
-          <SelectTrigger aria-label={day} className="h-9 min-w-40 flex-1">
-            <SelectValue>
-              {(value: string) =>
-                value === UNSET
-                  ? "No meal"
-                  : (mealsById.get(Number(value))?.name ?? "No meal")
+      {/* Seven across once each day has room for a meal's name and its
+          servings (below that a card overflows), so the week reads as a
+          week; four, then two, then one as the screen narrows. */}
+      <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 week:grid-cols-7">
+        {DAYS.map((day, index) => {
+          const assignment = plan.draft[day];
+          const date = addDays(week, index);
+          return (
+            <DayCard
+              key={day}
+              day={day}
+              date={fromIso(date).getDate()}
+              today={date === todayIso}
+              assignment={assignment}
+              meal={assignment.meal_id === null ? null : (mealsById.get(assignment.meal_id) ?? null)}
+              meals={state.meals}
+              plannedIds={plannedIds}
+              onPick={(meal) => pick(day, meal)}
+              onCreate={async (name) => {
+                const meal = await onCreateMeal(name, 4);
+                if (meal) pick(day, meal);
+              }}
+              onServings={(servings) =>
+                plan.setDay(
+                  day,
+                  { meal_id: assignment.meal_id, servings },
+                  `${servings} servings on ${day}`,
+                )
               }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={UNSET}>No meal</SelectItem>
-            {meals.map((meal) => (
-              <SelectItem key={meal.id} value={String(meal.id)}>
-                {meal.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {assigned && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Label
-              htmlFor={`servings-${day}`}
-              className="text-xs text-muted-foreground"
-            >
-              Serves
-            </Label>
-            <ServingsInput
-              id={`servings-${day}`}
-              servings={assignment.servings}
-              onChange={(servings) => onChange({ servings })}
+              onClear={() =>
+                plan.setDay(day, { meal_id: null, servings: null }, `clearing ${day}`)
+              }
             />
-          </div>
-        )}
-      </div>
+          );
+        })}
+      </ol>
     </div>
   );
 }
 
-/**
- * A servings field that holds what is typed as text, and only reports a
- * whole number of at least 1. Coercing on every keystroke meant the field
- * could not be cleared: it snapped to 1, so typing "4" gave "14".
- */
-function ServingsInput({
-  id,
-  servings,
-  onChange,
-}: {
-  id: string;
-  servings: number | null;
-  onChange: (servings: number) => void;
-}) {
-  const shown = servings === null ? "" : String(servings);
-  const [text, setText] = useState(shown);
-
-  // Follow changes made elsewhere, such as picking a different meal.
-  // Adjusted during render, as with the draft above, so no stale frame.
-  const [syncedFrom, setSyncedFrom] = useState(servings);
-  if (syncedFrom !== servings) {
-    setSyncedFrom(servings);
-    setText(shown);
-  }
-
+function SaveState({ status }: { status: "saved" | "saving" | "failed" }) {
   return (
-    <Input
-      id={id}
-      type="number"
-      min={1}
-      step={1}
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        const parsed = Number(e.target.value);
-        if (e.target.value !== "" && Number.isInteger(parsed) && parsed >= 1) {
-          onChange(parsed);
-        }
-      }}
-      // Leaving the field blank or invalid puts the last good value back.
-      onBlur={() => setText(shown)}
-      className="h-9 w-16"
-    />
-  );
-}
-
-function buildDraft(state: AppState): Record<Day, DayAssignment> {
-  const byDay = new Map(state.plan.map((p) => [p.day, p]));
-  return Object.fromEntries(
-    DAYS.map((day) => [
-      day,
-      byDay.get(day) ?? { day, meal_id: null, servings: null },
-    ]),
-  ) as Record<Day, DayAssignment>;
-}
-
-function sameAssignment(
-  draft: DayAssignment,
-  plan: DayAssignment[],
-  day: Day,
-): boolean {
-  const saved = plan.find((p) => p.day === day);
-  return (
-    (saved?.meal_id ?? null) === draft.meal_id &&
-    (saved?.servings ?? null) === draft.servings
+    <p role="status" className="flex items-center gap-1.5 text-muted-foreground">
+      {status === "saving" ? (
+        <>
+          <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+          Saving…
+        </>
+      ) : status === "failed" ? (
+        <>
+          <TriangleAlert aria-hidden className="size-3.5 text-destructive" />
+          Not saved
+        </>
+      ) : (
+        <>
+          <Check aria-hidden className="size-3.5 text-primary" />
+          Saved
+        </>
+      )}
+    </p>
   );
 }

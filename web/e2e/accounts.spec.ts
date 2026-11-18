@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { addMeal, goTo, mealRow, openWeek, uniqueName } from "./helpers.ts";
+import { addMeal, dayPicker, goTo, mealRow, openWeek, uniqueName } from "./helpers.ts";
 
 test("each visitor gets their own guest session, invisible to anyone else", async ({
   browser,
@@ -39,10 +39,8 @@ test("a first visit lands in a guest session with sample meals planned this week
 
   // Home is this week's plan, already part filled.
   await expect(page.getByText("You're using a guest session.")).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Monday" })).toContainText(
-    "Spaghetti Bolognese",
-  );
-  await expect(page.getByRole("combobox", { name: "Wednesday" })).toContainText("No meal");
+  await expect(dayPicker(page, "Monday")).toHaveAccessibleName("Monday: Spaghetti Bolognese");
+  await expect(dayPicker(page, "Wednesday")).toHaveAccessibleName("Wednesday: no meal");
 
   await goTo(page, "Meals");
   for (const meal of ["Spaghetti Bolognese", "Tacos", "Butter Chicken"]) {
