@@ -1,10 +1,11 @@
-import { CalendarDays, ShoppingBasket, UtensilsCrossed } from "lucide-react";
+import { CalendarDays, House, ShoppingBasket, UtensilsCrossed } from "lucide-react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useEffect } from "react";
 
 import { AccountBar } from "@/components/AccountBar";
 import { AppShell, type NavPage } from "@/components/AppShell";
 import { GroceryTab } from "@/components/GroceryTab";
+import { ThisWeekPage } from "@/components/home/ThisWeekPage";
 import { MealsTab } from "@/components/meals/MealsTab";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { WeeklyPlanTab } from "@/components/WeeklyPlanTab";
@@ -13,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { useAccount } from "@/hooks/useAccount";
 import { usePlanner } from "@/hooks/usePlanner";
 import { useTheme } from "@/hooks/useTheme";
-import { addDays, formatWeekRange, mondayOf } from "@/lib/dates";
+import { addDays, formatWeekRange, mondayOf, toIso, weekName } from "@/lib/dates";
 import { usePathname } from "@/lib/location";
 
 const APP_NAME = "Meal Planner";
@@ -25,27 +26,33 @@ interface Page extends NavPage {
   weekly: boolean;
 }
 
-/** In the order a week is put together: meals, then the plan, then shopping. */
+/**
+ * Home first, then in the order a week is put together: meals, then the
+ * plan, then shopping.
+ */
 const PAGES: readonly Page[] = [
+  { id: "home", path: "/", label: "This week", title: "This week", icon: House, weekly: true },
   { id: "meals", path: "/meals", label: "Meals", title: "Meals", icon: UtensilsCrossed, weekly: false },
   { id: "plan", path: "/plan", label: "Plan", title: "Weekly plan", icon: CalendarDays, weekly: true },
   { id: "groceries", path: "/groceries", label: "Groceries", title: "Groceries", icon: ShoppingBasket, weekly: true },
 ];
 
-/** The page at a path. The plan is home, and anything unknown goes there. */
+/** The page at a path; anything unknown goes home. */
 function pageAt(path: string): Page {
-  return PAGES.find((page) => page.path === path) ?? PAGES[1];
+  return PAGES.find((page) => page.path === path) ?? PAGES[0];
 }
 
 export default function App() {
-  const planner = usePlanner();
+  const page = pageAt(usePathname());
+  const planner = usePlanner({ loadGroceries: page.id === "home" });
   const session = useAccount();
   const theme = useTheme();
-  const page = pageAt(usePathname());
+  // Home is named for the week it shows: "This week", "Next week"...
+  const title = page.id === "home" ? weekName(planner.week) : page.title;
 
   useEffect(() => {
-    document.title = `${page.title} · ${APP_NAME}`;
-  }, [page.title]);
+    document.title = `${title} · ${APP_NAME}`;
+  }, [title]);
 
   return (
     <AppShell
@@ -68,7 +75,7 @@ export default function App() {
       }
     >
       <header className="flex min-h-16 flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b px-4 py-3 sm:px-6 lg:px-8">
-        <h1 className="text-xl font-semibold tracking-tight">{page.title}</h1>
+        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         {page.weekly && (
           <WeekPicker
             week={planner.week}
@@ -126,6 +133,15 @@ export default function App() {
             aria-busy={planner.loading}
             className={planner.loading ? "opacity-60 transition-opacity" : undefined}
           >
+            {page.id === "home" && (
+              <ThisWeekPage
+                state={planner.state}
+                today={toIso(new Date())}
+                groceries={planner.grocery}
+                onSave={planner.savePlan}
+                onCreateMeal={planner.addMeal}
+              />
+            )}
             {page.id === "meals" && (
               <MealsTab
                 state={planner.state}

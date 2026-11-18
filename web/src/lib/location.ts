@@ -91,10 +91,30 @@ export function carriedSearch(search: string): string {
   return week ? `?${new URLSearchParams({ week })}` : "";
 }
 
-/** Go to another page, keeping the week. */
-export function navigate(path: string): void {
-  if (path === window.location.pathname) return;
-  window.history.pushState(null, "", path + carriedSearch(window.location.search));
+/**
+ * The address of another page, keeping the week and adding what that page
+ * should open on: `linkTo("/plan", "?week=2026-11-16", { day: "Tuesday" })`
+ * is "/plan?week=2026-11-16&day=Tuesday".
+ */
+export function linkTo(
+  path: string,
+  search: string,
+  params: Readonly<Record<string, string>> = {},
+): string {
+  const query = new URLSearchParams(carriedSearch(search));
+  for (const [name, value] of Object.entries(params)) query.set(name, value);
+  const rest = query.toString();
+  return rest ? `${path}?${rest}` : path;
+}
+
+/** Go to another page, keeping the week, and opening on `params`. */
+export function navigate(path: string, params: Readonly<Record<string, string>> = {}): void {
+  const here = path === window.location.pathname;
+  // The link to the page already open does nothing, rather than resetting it.
+  if (here && Object.keys(params).length === 0) return;
+  const to = linkTo(path, window.location.search, params);
+  if (here && to === window.location.pathname + window.location.search) return;
+  window.history.pushState(null, "", to);
   window.scrollTo(0, 0);
   changed();
 }

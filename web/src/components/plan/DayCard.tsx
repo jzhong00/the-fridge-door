@@ -5,18 +5,8 @@ import { MealAvatar } from "@/components/meals/MealAvatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { DAY_EDGE } from "./days";
 import { MealPicker } from "./MealPicker";
-
-/** Each day's colour, the same wherever a day appears. */
-const DAY_EDGE: Record<Day, string> = {
-  Monday: "border-t-mon",
-  Tuesday: "border-t-tue",
-  Wednesday: "border-t-wed",
-  Thursday: "border-t-thu",
-  Friday: "border-t-fri",
-  Saturday: "border-t-sat",
-  Sunday: "border-t-sun",
-};
 
 const MAX_SERVINGS = 99;
 
@@ -36,6 +26,7 @@ export function DayCard({
   onCreate,
   onServings,
   onClear,
+  openOnArrival = false,
 }: {
   day: Day;
   /** Day of the month, e.g. 16. */
@@ -49,6 +40,8 @@ export function DayCard({
   onCreate: (name: string) => void;
   onServings: (servings: number) => void;
   onClear: () => void;
+  /** Open the meal search straight away: the link here was for this day. */
+  openOnArrival?: boolean;
 }) {
   const servings = assignment.servings ?? meal?.servings ?? 1;
 
@@ -93,6 +86,7 @@ export function DayCard({
         triggerLabel={`${day}: ${meal?.name ?? "no meal"}`}
         onPick={onPick}
         onCreate={onCreate}
+        defaultOpen={openOnArrival}
       >
         {() =>
           meal ? (

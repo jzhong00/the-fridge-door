@@ -1,5 +1,5 @@
 /**
- * The six flows the app exists for, in a real browser against the real API.
+ * The flows the app exists for, in a real browser against the real API.
  *
  * Each spec works in its own week and names its own meals, so they do not
  * depend on each other or on the order they run in.
@@ -135,4 +135,47 @@ test("copy last week's plan forward, and undo it", async ({ page }) => {
 
   await page.getByRole("button", { name: "Undo copying last week" }).click();
   await expect(dayPicker(page, "Wednesday")).toHaveAccessibleName("Wednesday: no meal");
+});
+
+test("home: plan the focal day in place, then any other day in one click", async ({ page }) => {
+  const soup = uniqueName("Pumpkin Soup");
+  const pie = uniqueName("Fish Pie");
+  await openWeek(page, "2026-02-09");
+  await addMeal(page, soup);
+  await addMeal(page, pie);
+
+  // A week other than this one is about its Monday.
+  await goTo(page, "This week");
+  const monday = page.getByRole("region", { name: /^Monday/ });
+  await expect(monday).toContainText("Nothing planned yet");
+  const saved = page.waitForResponse(
+    (r) => r.request().method() === "PUT" && r.url().includes("/api/plan/"),
+  );
+  await page.getByRole("button", { name: "Choose a meal for Monday" }).click();
+  await expect(page.getByRole("combobox", { name: "Search meals" })).toBeFocused();
+  await page.keyboard.type(soup);
+  await expect(page.getByRole("option").first()).toContainText(soup);
+  await page.keyboard.press("Enter");
+  expect((await saved).ok()).toBe(true);
+  await expect(monday).toContainText(soup);
+  await expect(page.getByRole("link", { name: /^Nights planned/ })).toContainText("1of 7");
+
+  // The next night to plan is a click away, its search already open.
+  await page.getByRole("link", { name: /^Nights planned/ }).click();
+  await expect(page).toHaveURL(/\/plan\?week=2026-02-09$/);
+  await expect(page.getByRole("combobox", { name: "Search meals" })).toBeFocused();
+  const second = page.waitForResponse(
+    (r) => r.request().method() === "PUT" && r.url().includes("/api/plan/"),
+  );
+  await page.keyboard.type(pie);
+  await expect(page.getByRole("option").first()).toContainText(pie);
+  await page.keyboard.press("Enter");
+  expect((await second).ok()).toBe(true);
+  await expect(dayPicker(page, "Tuesday")).toHaveAccessibleName(`Tuesday: ${pie}`);
+
+  // Back home, the week shows both, and the count of things to buy is real.
+  await goTo(page, "This week");
+  const week = page.getByRole("region", { name: "The week" });
+  await expect(week.getByRole("link", { name: /^Tuesday/ })).toContainText(pie);
+  await expect(page.getByRole("link", { name: /^To buy/ })).toContainText("0items");
 });

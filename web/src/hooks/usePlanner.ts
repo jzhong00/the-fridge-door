@@ -34,7 +34,16 @@ import { parseWeek, useSearchParam } from "../lib/location";
 
 type Library = Pick<AppState, "meals" | "ingredient_names" | "templates">;
 
-export function usePlanner() {
+export function usePlanner({
+  loadGroceries = false,
+}: {
+  /**
+   * Fetch the week's grocery list without being asked, and again whenever a
+   * change outdates it: for a page that shows it, such as the home page's
+   * item count. Otherwise it is fetched only by `generateGroceryList`.
+   */
+  loadGroceries?: boolean;
+} = {}) {
   const queryClient = useQueryClient();
   const [week, setWeek] = useSearchParam("week", parseWeek);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -68,12 +77,13 @@ export function usePlanner() {
     placeholderData: keepPreviousData,
   });
 
-  // Generated on request, then held per week: returning to a week shows the
-  // list already generated for it.
+  // Held per week: returning to a week shows the list already fetched for
+  // it. A change resets it (below): fetched again straight away when
+  // loading itself, otherwise left for the next "Generate".
   const grocery = useQuery({
     queryKey: queryKeys.grocery(week),
     queryFn: () => api.getGroceryList(week),
-    enabled: false,
+    enabled: loadGroceries && library.isSuccess,
   });
 
   const report = (err: unknown) => setActionError(describe(err));

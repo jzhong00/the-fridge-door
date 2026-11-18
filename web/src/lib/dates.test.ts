@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addDays, formatWeekRange, fromIso, mondayOf, toIso } from "./dates";
+import { addDays, formatWeekRange, fromIso, mondayOf, toIso, weekName } from "./dates";
 
 describe("mondayOf", () => {
   it.each([
@@ -53,5 +53,27 @@ describe("formatWeekRange", () => {
     const formatted = formatWeekRange("2026-08-03");
     expect(formatted).toContain("–");
     expect(formatted).toContain("2026");
+  });
+});
+
+describe("weekName", () => {
+  const wednesday = fromIso("2026-08-05");
+
+  it.each([
+    ["2026-08-03", "This week"],
+    ["2026-08-10", "Next week"],
+    ["2026-07-27", "Last week"],
+  ])("calls %s %s", (week, name) => {
+    expect(weekName(week, wednesday)).toBe(name);
+  });
+
+  it("names a week further away by its Monday, with the year only if it differs", () => {
+    const short = (iso: string, options: Intl.DateTimeFormatOptions = {}) =>
+      fromIso(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", ...options });
+
+    expect(weekName("2026-08-17", wednesday)).toBe(`Week of ${short("2026-08-17")}`);
+    expect(weekName("2027-01-04", wednesday)).toBe(
+      `Week of ${short("2027-01-04", { year: "numeric" })}`,
+    );
   });
 });

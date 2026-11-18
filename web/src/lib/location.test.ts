@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { navigate, redirectLegacyTabLink } from "./location";
+import { linkTo, navigate, redirectLegacyTabLink } from "./location";
 
 const here = () => window.location.pathname + window.location.search;
 
@@ -54,5 +54,26 @@ describe("changing page", () => {
     const before = window.history.length;
     navigate("/plan");
     expect(window.history.length).toBe(before);
+  });
+
+  it("does not reset the page it is on, so the open meal stays open", () => {
+    window.history.replaceState(null, "", "/meals?week=2026-08-03&meal=4");
+    navigate("/meals");
+    expect(here()).toBe("/meals?week=2026-08-03&meal=4");
+  });
+});
+
+describe("a link to another page", () => {
+  it("keeps the week and adds what that page should open on", () => {
+    expect(linkTo("/plan", "?week=2026-08-03&meal=4", { day: "Tuesday" })).toBe(
+      "/plan?week=2026-08-03&day=Tuesday",
+    );
+    expect(linkTo("/groceries", "")).toBe("/groceries");
+  });
+
+  it("is followed in place, opening on what it names", () => {
+    window.history.replaceState(null, "", "/?week=2026-08-03");
+    navigate("/plan", { day: "Friday" });
+    expect(here()).toBe("/plan?week=2026-08-03&day=Friday");
   });
 });

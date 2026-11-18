@@ -13,6 +13,7 @@ vi.mock("@/api/client", async (importOriginal) => ({
   api: {
     getState: vi.fn(),
     getPlan: vi.fn(),
+    getGroceryList: vi.fn(),
     me: vi.fn(),
     signUp: vi.fn(),
     logIn: vi.fn(),
@@ -29,6 +30,7 @@ beforeEach(() => {
     makeState({ week_start: week, meals: [makeMeal({ id: 1, name: "Spaghetti" })] }),
   );
   mocked.me.mockResolvedValue({ email: null, is_guest: true });
+  mocked.getGroceryList.mockResolvedValue([]);
 });
 
 async function renderApp(path = "/") {
@@ -49,12 +51,32 @@ const currentLink = () =>
     .find((link) => link.getAttribute("aria-current") === "page");
 
 describe("pages", () => {
-  it("opens on the plan", async () => {
+  it("opens on this week", async () => {
     await renderApp();
 
+    expect(heading()).toHaveTextContent("This week");
+    expect(currentLink()).toHaveTextContent("This week");
+    expect(document.title).toBe("This week · Meal Planner");
+  });
+
+  it("names home for the week it shows", async () => {
+    const user = userEvent.setup();
+    await renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Next week" }));
+    expect(heading()).toHaveTextContent("Next week");
+    expect(document.title).toBe("Next week · Meal Planner");
+    // Other pages keep their own names in any week.
+    await user.click(screen.getByRole("link", { name: "Plan" }));
     expect(heading()).toHaveTextContent("Weekly plan");
-    expect(currentLink()).toHaveTextContent("Plan");
-    expect(document.title).toBe("Weekly plan · Meal Planner");
+  });
+
+  it("loads the grocery list for home's count, and only there", async () => {
+    await renderApp("/meals");
+    expect(mocked.getGroceryList).not.toHaveBeenCalled();
+
+    await userEvent.setup().click(screen.getByRole("link", { name: "This week" }));
+    await waitFor(() => expect(mocked.getGroceryList).toHaveBeenCalledTimes(1));
   });
 
   it("opens the page in the link", async () => {
@@ -64,10 +86,10 @@ describe("pages", () => {
     expect(currentLink()).toHaveTextContent("Groceries");
   });
 
-  it("sends a path it does not know to the plan", async () => {
+  it("sends a path it does not know home", async () => {
     await renderApp("/settings");
 
-    expect(heading()).toHaveTextContent("Weekly plan");
+    expect(heading()).toHaveTextContent("This week");
   });
 
   it("changes page in place, keeping the week, with the back button working", async () => {

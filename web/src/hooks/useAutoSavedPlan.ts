@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { DAYS, type Day, type DayAssignment, type WeekPlan } from "@/api/types";
+import { DAYS, type Day, type DayAssignment, type Meal, type WeekPlan } from "@/api/types";
 
 export type Draft = Record<Day, DayAssignment>;
 
@@ -91,12 +91,22 @@ export function useAutoSavedPlan({
     void flush();
   };
 
+  const setDay = (day: Day, assignment: Omit<DayAssignment, "day">, label: string) =>
+    apply({ ...draft, [day]: { day, ...assignment } }, label);
+
   return {
     draft,
     status,
     change,
-    setDay: (day: Day, assignment: Omit<DayAssignment, "day">, label: string) =>
-      apply({ ...draft, [day]: { day, ...assignment } }, label),
+    setDay,
+    /** Plan a meal on a day. */
+    pick: (day: Day, meal: Meal) =>
+      setDay(
+        day,
+        // A day keeps the servings it had; a new day starts at the recipe's.
+        { meal_id: meal.id, servings: draft[day].servings ?? meal.servings },
+        `${meal.name} on ${day}`,
+      ),
     undo: () => {
       if (!change) return;
       apply(change.before, null);
