@@ -7,7 +7,7 @@
 
 import { expect, test } from "@playwright/test";
 
-import { addMeal, chooseOption, mealRow, openWeek, uniqueName } from "./helpers.ts";
+import { addMeal, chooseOption, goTo, mealRow, openWeek, pageLink, uniqueName } from "./helpers.ts";
 
 test("add a meal", async ({ page }) => {
   await openWeek(page, "2026-01-05");
@@ -64,18 +64,16 @@ test("plan a week and save it", async ({ page }) => {
   const name = uniqueName("Shakshuka");
   await addMeal(page, name, 2);
 
-  await page.getByRole("tab", { name: "Weekly Plan" }).click();
+  await goTo(page, "Plan");
   await chooseOption(page, "Monday", name);
   await expect(page.getByLabel("Serves")).toHaveValue("2");
   await page.getByRole("button", { name: "Save plan" }).click();
   await expect(page.getByRole("button", { name: "Save plan" })).toBeDisabled();
 
-  // The URL keeps the tab and week, so a reload lands on the saved plan.
+  // The URL keeps the page and week, so a reload lands on the saved plan.
   await page.reload();
-  await expect(page.getByRole("tab", { name: "Weekly Plan" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(page).toHaveURL(/\/plan\?week=2026-01-12$/);
+  await expect(pageLink(page, "Plan")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("combobox", { name: "Monday" })).toContainText(name);
 });
 
@@ -84,13 +82,13 @@ test("the grocery list totals the week and converts units", async ({ page }) => 
   // One of the sample meals every guest starts with.
   await expect(mealRow(page, "Spaghetti Bolognese")).toBeVisible();
 
-  await page.getByRole("tab", { name: "Weekly Plan" }).click();
+  await goTo(page, "Plan");
   await chooseOption(page, "Monday", "Spaghetti Bolognese");
   await chooseOption(page, "Tuesday", "Spaghetti Bolognese");
   await page.getByRole("button", { name: "Save plan" }).click();
   await expect(page.getByRole("button", { name: "Save plan" })).toBeDisabled();
 
-  await page.getByRole("tab", { name: "Grocery List" }).click();
+  await goTo(page, "Groceries");
   await page.getByRole("button", { name: "Generate list" }).click();
 
   // Two nights of a recipe using 400 g pasta and 500 g mince.
@@ -101,9 +99,9 @@ test("the grocery list totals the week and converts units", async ({ page }) => 
 test("copy last week's plan forward", async ({ page }) => {
   await openWeek(page, "2026-01-26", "plan");
   const name = uniqueName("Pho");
-  await page.getByRole("tab", { name: "Meals" }).click();
+  await goTo(page, "Meals");
   await addMeal(page, name);
-  await page.getByRole("tab", { name: "Weekly Plan" }).click();
+  await goTo(page, "Plan");
   await chooseOption(page, "Wednesday", name);
   await page.getByRole("button", { name: "Save plan" }).click();
   await expect(page.getByRole("button", { name: "Save plan" })).toBeDisabled();

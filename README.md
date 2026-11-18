@@ -36,10 +36,12 @@ web/ (React)  →  server/ (FastAPI)  →  app/ (domain)  →  Postgres / SQLite
   written for users surface verbatim.
 - **`web/`** renders, and holds server state in TanStack Query. It loads a
   week in a single request and works from memory afterwards: mutations patch
-  the cache from the API's response rather than refetching. The tab and week
-  live in the URL, so a refresh or a shared link opens the same view. Built on
-  shadcn/ui over Base UI primitives, so dialogs, selects and tabs are
-  accessible without hand-rolling them.
+  the cache from the API's response rather than refetching. Each page has
+  its own address (`/meals`, `/plan`, `/groceries`) and the week is in the
+  query string, so a refresh, the back button or a shared link opens the same
+  view. Light, dark and match-device themes, with the choice applied before
+  first paint. Built on shadcn/ui over Base UI primitives, so dialogs and
+  selects are accessible without hand-rolling them.
 
 Nothing above `Database` knows which backend is in use — swapping SQLite for
 Postgres is one environment variable.
@@ -111,7 +113,7 @@ Four changes, in order of how much they bought:
    than a query per meal and per ingredient.
 
 The frontend loads a week in one request and works from memory afterwards, so
-switching tabs or opening a dropdown touches no network at all. Only changes
+changing page or opening a dropdown touches no network at all. Only changes
 hit the API.
 
 ```

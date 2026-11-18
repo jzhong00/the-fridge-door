@@ -30,7 +30,7 @@ import { useState } from "react";
 import { ApiError, api } from "../api/client";
 import { queryKeys } from "../api/queryClient";
 import type { AppState, Meal, WeekPlan } from "../api/types";
-import { parseWeek, useSearchParam } from "../lib/searchParams";
+import { parseWeek, useSearchParam } from "../lib/location";
 
 type Library = Pick<AppState, "meals" | "ingredient_names" | "templates">;
 
