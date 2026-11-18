@@ -5,9 +5,9 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* A hue per weekday, so a filled week reads at a glance. Warm-biased to
-   match the amber primary; chroma is held low enough to read as a palette
-   rather than a rainbow. */
+/* A hue per weekday, so a filled week reads at a glance. Chroma is held
+   low enough to read as a palette rather than a rainbow, and lightness
+   mid enough to show on both the light and the dark surface. */
 @theme {
   --color-mon: oklch(0.70 0.16 25);
   --color-tue: oklch(0.74 0.15 60);
@@ -47,6 +47,8 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-primary-subtle-foreground: var(--primary-subtle-foreground);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -62,71 +64,95 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Two surfaces, after FloorSync's operations theme: slate, with panels a
+   step off the page so they read as panels, and one accent. Emerald where
+   FloorSync has blue, which keeps a family resemblance without copying it,
+   and suits food. `-subtle` pairs are a tinted background with text that
+   stays readable on it, for the active nav item and status pills. */
+
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  color-scheme: light;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  --background: #f1f5f9;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+
+  /* emerald-700: white text on it passes AA, which emerald-600 does not. */
+  --primary: #047857;
+  --primary-foreground: #ffffff;
+  --primary-subtle: #d1fae5;
+  --primary-subtle-foreground: #065f46;
+
+  --secondary: #e2e8f0;
+  --secondary-foreground: #0f172a;
+  --muted: #f8fafc;
+  /* Darker than slate-500, which falls just short of AA on the page
+     background and on secondary surfaces. */
+  --muted-foreground: #5b6779;
+  --accent: #e2e8f0;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626;
+
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #059669;
+
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #d1fae5;
+  --sidebar-primary-foreground: #065f46;
+  --sidebar-accent: #e2e8f0;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #059669;
 }
 
 .dark {
-  /* Blue-grey slate. The chroma is low enough to read as neutral but not
-     zero, which is what keeps it from looking like flat black. */
-  --background: oklch(0.16 0.012 250);
-  --foreground: oklch(0.96 0.005 250);
-  --card: oklch(0.20 0.014 250);
-  --card-foreground: oklch(0.96 0.005 250);
-  --popover: oklch(0.20 0.014 250);
-  --popover-foreground: oklch(0.96 0.005 250);
-  /* Emerald: the one warm-adjacent hue with an honest link to the subject. */
-  --primary: oklch(0.76 0.16 160);
-  --primary-foreground: oklch(0.18 0.03 160);
-  --secondary: oklch(0.25 0.016 250);
-  --secondary-foreground: oklch(0.96 0.005 250);
-  --muted: oklch(0.25 0.016 250);
-  --muted-foreground: oklch(0.70 0.02 250);
-  --accent: oklch(0.28 0.02 250);
-  --accent-foreground: oklch(0.97 0.006 250);
-  --destructive: oklch(0.64 0.19 25);
-  --border: oklch(0.75 0.03 250 / 14%);
-  --input: oklch(0.75 0.03 250 / 16%);
-  --ring: oklch(0.76 0.16 160);
-  --sidebar: oklch(0.20 0.014 250);
-  --sidebar-foreground: oklch(0.96 0.005 250);
-  --sidebar-primary: oklch(0.76 0.16 160);
-  --sidebar-primary-foreground: oklch(0.18 0.03 160);
-  --sidebar-accent: oklch(0.28 0.02 250);
-  --sidebar-accent-foreground: oklch(0.97 0.006 250);
-  --sidebar-border: oklch(0.75 0.03 250 / 14%);
-  --sidebar-ring: oklch(0.76 0.16 160);
+  color-scheme: dark;
+
+  --background: #0b1220;
+  --foreground: #e2e8f0;
+  --card: #0f172a;
+  --card-foreground: #e2e8f0;
+  --popover: #0f172a;
+  --popover-foreground: #e2e8f0;
+
+  /* emerald-400 with near-black text: white on any mid emerald fails AA. */
+  --primary: #34d399;
+  --primary-foreground: #022c22;
+  --primary-subtle: #0b2e26;
+  --primary-subtle-foreground: #6ee7b7;
+
+  --secondary: #1e293b;
+  --secondary-foreground: #e2e8f0;
+  --muted: #111a2e;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #e2e8f0;
+  --destructive: #ef4444;
+
+  --border: #1e293b;
+  --input: #334155;
+  --ring: #34d399;
+
+  --sidebar: #0f172a;
+  --sidebar-foreground: #e2e8f0;
+  --sidebar-primary: #0b2e26;
+  --sidebar-primary-foreground: #6ee7b7;
+  --sidebar-accent: #1e293b;
+  --sidebar-accent-foreground: #e2e8f0;
+  --sidebar-border: #1e293b;
+  --sidebar-ring: #34d399;
 }
 
 @layer base {
@@ -135,14 +161,6 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* A single warm wash behind the header stops the page reading as a flat
-       slab. Fixed, so it stays put while content scrolls. */
-    background-image: radial-gradient(
-      120rem 40rem at 50% -18rem,
-      oklch(0.76 0.16 160 / 7%),
-      transparent 70%
-    );
-    background-attachment: fixed;
   }
   html {
     @apply font-sans;
