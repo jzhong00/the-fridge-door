@@ -1,8 +1,8 @@
 import type { LucideIcon } from "lucide-react";
 import { UtensilsCrossed } from "lucide-react";
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { carriedSearch, navigate, useSearch } from "@/lib/location";
+import { AppLink } from "@/components/AppLink";
 
 export interface NavPage {
   id: string;
@@ -65,9 +65,8 @@ export function AppShell({
 
 function Brand() {
   return (
-    <a
-      href="/"
-      onClick={followInApp("/")}
+    <AppLink
+      to="/"
       className="flex shrink-0 items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring lg:px-1"
     >
       <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
@@ -76,43 +75,20 @@ function Brand() {
       <span className="hidden text-[15px] font-semibold tracking-tight sm:inline">
         Meal Planner
       </span>
-    </a>
+    </AppLink>
   );
 }
 
 function NavLink({ page, active }: { page: NavPage; active: boolean }) {
-  const search = useSearch();
   const Icon = page.icon;
   return (
-    <a
-      href={page.path + carriedSearch(search)}
-      onClick={followInApp(page.path)}
+    <AppLink
+      to={page.path}
       aria-current={active ? "page" : undefined}
       className="flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-primary-subtle aria-[current=page]:text-primary-subtle-foreground lg:flex-row lg:gap-3 lg:py-2 lg:text-sm"
     >
       <Icon className="size-5 lg:size-4" aria-hidden />
       {page.label}
-    </a>
+    </AppLink>
   );
-}
-
-/**
- * A plain click changes page without reloading; a click meant for a new
- * tab or window (modifier keys, middle button) is left to the browser,
- * which is why these are real links with real addresses.
- */
-function followInApp(path: string) {
-  return (event: MouseEvent<HTMLAnchorElement>) => {
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
-    event.preventDefault();
-    navigate(path);
-  };
 }

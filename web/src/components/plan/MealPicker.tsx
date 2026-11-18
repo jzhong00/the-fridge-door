@@ -28,6 +28,8 @@ export function MealPicker({
   triggerLabel,
   onPick,
   onCreate,
+  defaultOpen = false,
+  triggerClassName,
   children,
 }: {
   meals: readonly Meal[];
@@ -44,11 +46,15 @@ export function MealPicker({
   triggerLabel: string;
   onPick: (meal: Meal) => void;
   onCreate: (name: string) => void;
+  /** Open on arrival, as when a link from the home page names this day. */
+  defaultOpen?: boolean;
+  /** Replaces the trigger's own styling: the whole of a day card's meal area. */
+  triggerClassName?: string;
   /** The trigger: the day's card content. */
   children: (props: { open: boolean }) => ReactNode;
 }) {
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
 
   const ordered = [...meals].sort(
     (a, b) => Number(plannedIds.has(b.id)) - Number(plannedIds.has(a.id)),
@@ -78,7 +84,10 @@ export function MealPicker({
           does, and with saving as you go one stray key would plan a meal. */}
       <Popover.Trigger
         aria-label={triggerLabel}
-        className="flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={
+          triggerClassName ??
+          "flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        }
       >
         {children({ open })}
       </Popover.Trigger>
@@ -115,46 +124,46 @@ export function MealPicker({
                   className="h-9 w-full rounded-md bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
                 />
               </div>
-        <Combobox.Empty>
-          <p className="px-3 py-4 text-sm text-muted-foreground">
-            Type a name to create your first meal.
-          </p>
-        </Combobox.Empty>
-        <Combobox.List className="max-h-[min(20rem,var(--available-height))] overflow-y-auto overscroll-contain p-1 empty:p-0">
-          {(item: Item) =>
-            item.kind === "meal" ? (
-              <Combobox.Item
-                key={key(item)}
-                value={item}
-                className="flex cursor-default items-center gap-2.5 rounded-md px-2 py-1.5 text-sm outline-none select-none data-highlighted:bg-muted data-selected:font-medium"
-              >
-                <MealAvatar meal={item.meal} size="sm" />
-                <span className="min-w-0 flex-1 truncate">{item.meal.name}</span>
-                {plannedIds.has(item.meal.id) && (
-                  <span className="shrink-0 text-xs text-muted-foreground">This week</span>
-                )}
-              </Combobox.Item>
-            ) : (
-              <Combobox.Item
-                key={key(item)}
-                value={item}
-                className="flex cursor-default items-start gap-2.5 rounded-md px-2 py-1.5 text-sm outline-none select-none data-highlighted:bg-muted"
-              >
-                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-subtle text-primary-subtle-foreground">
-                  <Plus aria-hidden className="size-3.5" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block">
-                    New meal “<span className="font-medium">{item.name}</span>”
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    Add its ingredients on the Meals page
-                  </span>
-                </span>
-              </Combobox.Item>
-            )
-          }
-        </Combobox.List>
+              <Combobox.Empty>
+                <p className="px-3 py-4 text-sm text-muted-foreground">
+                  Type a name to create your first meal.
+                </p>
+              </Combobox.Empty>
+              <Combobox.List className="max-h-[min(20rem,var(--available-height))] overflow-y-auto overscroll-contain p-1 empty:p-0">
+                {(item: Item) =>
+                  item.kind === "meal" ? (
+                    <Combobox.Item
+                      key={key(item)}
+                      value={item}
+                      className="flex cursor-default items-center gap-2.5 rounded-md px-2 py-1.5 text-sm outline-none select-none data-highlighted:bg-muted data-selected:font-medium"
+                    >
+                      <MealAvatar meal={item.meal} size="sm" />
+                      <span className="min-w-0 flex-1 truncate">{item.meal.name}</span>
+                      {plannedIds.has(item.meal.id) && (
+                        <span className="shrink-0 text-xs text-muted-foreground">This week</span>
+                      )}
+                    </Combobox.Item>
+                  ) : (
+                    <Combobox.Item
+                      key={key(item)}
+                      value={item}
+                      className="flex cursor-default items-start gap-2.5 rounded-md px-2 py-1.5 text-sm outline-none select-none data-highlighted:bg-muted"
+                    >
+                      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary-subtle text-primary-subtle-foreground">
+                        <Plus aria-hidden className="size-3.5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block">
+                          New meal “<span className="font-medium">{item.name}</span>”
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          Add its ingredients on the Meals page
+                        </span>
+                      </span>
+                    </Combobox.Item>
+                  )
+                }
+              </Combobox.List>
             </Combobox.Root>
           </Popover.Popup>
         </Popover.Positioner>

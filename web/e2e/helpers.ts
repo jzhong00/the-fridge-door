@@ -28,7 +28,7 @@ export function mealRow(page: Page, name: string) {
   return page.getByRole("article", { name, exact: true });
 }
 
-type PageName = "meals" | "plan" | "groceries";
+type PageName = "home" | "meals" | "plan" | "groceries";
 
 /**
  * Open a page at a week. Every spec works in its own week. Meals are the
@@ -36,7 +36,7 @@ type PageName = "meals" | "plan" | "groceries";
  * the URL, and the other pages pick it up.
  */
 export async function openWeek(page: Page, week: string, where: PageName = "meals") {
-  await page.goto(`/${where}?week=${week}`);
+  await page.goto(`/${where === "home" ? "" : where}?week=${week}`);
   if (where === "meals") {
     await expect(page.getByLabel("Search meals")).toBeVisible();
   } else {
@@ -45,11 +45,13 @@ export async function openWeek(page: Page, week: string, where: PageName = "meal
 }
 
 /** Change page through the navigation, as a person would. */
-export async function goTo(page: Page, label: "Meals" | "Plan" | "Groceries") {
+type NavLabel = "This week" | "Meals" | "Plan" | "Groceries";
+
+export async function goTo(page: Page, label: NavLabel) {
   await pageLink(page, label).click();
 }
 
-export function pageLink(page: Page, label: "Meals" | "Plan" | "Groceries") {
+export function pageLink(page: Page, label: NavLabel) {
   return page
     .getByRole("navigation", { name: "Pages" })
     .getByRole("link", { name: label, exact: true });

@@ -1,11 +1,17 @@
 import { Check, CopyIcon, LoaderCircle, TriangleAlert, Undo2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
-import type { AppState, DayAssignment, Meal, WeekPlan } from "@/api/types";
+import type { AppState, Day, DayAssignment, Meal, WeekPlan } from "@/api/types";
 import { DAYS } from "@/api/types";
 import { DayCard } from "@/components/plan/DayCard";
 import { Button } from "@/components/ui/button";
 import { useAutoSavedPlan } from "@/hooks/useAutoSavedPlan";
 import { addDays, fromIso, toIso } from "@/lib/dates";
+import { useSearchParam } from "@/lib/location";
+
+/** A day named in the address, or "" for none (or one that is not a day). */
+const parseDay = (raw: string | null): Day | "" =>
+  DAYS.find((day) => day === raw) ?? "";
 
 interface Props {
   state: AppState;
@@ -30,13 +36,14 @@ export function WeeklyPlanTab({ state, pending, onSave, onCopyPrevious, onCreate
   const filled = DAYS.filter((day) => plan.draft[day].meal_id !== null).length;
   const todayIso = toIso(new Date());
 
-  const pick = (day: (typeof DAYS)[number], meal: Meal) =>
-    plan.setDay(
-      day,
-      // A day keeps the servings it had; a new day starts at the recipe's.
-      { meal_id: meal.id, servings: plan.draft[day].servings ?? meal.servings },
-      `${meal.name} on ${day}`,
-    );
+  // A link can name a day to open on ("/plan?day=Tuesday", from the home
+  // page's week). Its search opens once, on arrival, and the day leaves the
+  // address, so a refresh or the back button does not open it again.
+  const [linkedDay, setLinkedDay] = useSearchParam("day", parseDay);
+  const [openOnArrival] = useState(linkedDay);
+  useEffect(() => {
+    if (linkedDay) setLinkedDay("");
+  }, [linkedDay, setLinkedDay]);
 
   return (
     <div className="space-y-4">
@@ -86,10 +93,11 @@ export function WeeklyPlanTab({ state, pending, onSave, onCopyPrevious, onCreate
               meal={assignment.meal_id === null ? null : (mealsById.get(assignment.meal_id) ?? null)}
               meals={state.meals}
               plannedIds={plannedIds}
-              onPick={(meal) => pick(day, meal)}
+              openOnArrival={openOnArrival === day}
+              onPick={(meal) => plan.pick(day, meal)}
               onCreate={async (name) => {
                 const meal = await onCreateMeal(name, 4);
-                if (meal) pick(day, meal);
+                if (meal) plan.pick(day, meal);
               }}
               onServings={(servings) =>
                 plan.setDay(

@@ -42,6 +42,23 @@ export function formatWeekRange(mondayIso: string): string {
   return `${short(start)} – ${short(end)}, ${end.getFullYear()}`;
 }
 
+/**
+ * A week named as a person would: "This week", "Next week", "Last week",
+ * and further away, "Week of Dec 7".
+ */
+export function weekName(mondayIso: string, today: Date = new Date()): string {
+  const current = mondayOf(today);
+  if (mondayIso === current) return "This week";
+  if (mondayIso === addDays(current, 7)) return "Next week";
+  if (mondayIso === addDays(current, -7)) return "Last week";
+  const start = fromIso(mondayIso);
+  return `Week of ${start.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(start.getFullYear() === today.getFullYear() ? {} : { year: "numeric" }),
+  })}`;
+}
+
 /** e.g. "Aug 03, 2026" */
 export function formatDate(iso: string): string {
   return fromIso(iso).toLocaleDateString(undefined, {

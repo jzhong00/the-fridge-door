@@ -324,3 +324,27 @@ describe("following the server", () => {
     expect(picker("Friday")).toHaveAccessibleName("Friday: Tacos");
   });
 });
+
+describe("arriving from a link to a day", () => {
+  it("opens that day's search, once: the day leaves the address", async () => {
+    window.history.replaceState(null, "", `/plan?week=${WEEK}&day=Thursday`);
+    const user = userEvent.setup();
+    const { props } = renderPlan();
+
+    const search = await screen.findByRole("combobox", { name: "Search meals" });
+    await waitFor(() => expect(search).toHaveFocus());
+    expect(screen.getByRole("dialog", { name: "Choose a meal for Thursday" })).toBeInTheDocument();
+    // A refresh or Back should not open it again; the week stays.
+    expect(window.location.search).toBe(`?week=${WEEK}`);
+
+    await user.keyboard("cur{Enter}");
+    expect(lastSaved(props.onSave).Thursday).toMatchObject({ meal_id: 3 });
+  });
+
+  it("ignores a day that is not one", () => {
+    window.history.replaceState(null, "", "/plan?day=Caturday");
+    renderPlan();
+
+    expect(screen.queryByRole("combobox", { name: "Search meals" })).not.toBeInTheDocument();
+  });
+});

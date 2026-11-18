@@ -37,8 +37,14 @@ test("a first visit lands in a guest session with sample meals planned this week
 }) => {
   await page.goto("/");
 
-  // Home is this week's plan, already part filled.
+  // Home is this week, already part filled.
   await expect(page.getByText("You're using a guest session.")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("This week");
+  await expect(
+    page.getByRole("region", { name: "The week" }).getByRole("link", { name: /^Monday/ }),
+  ).toContainText("Spaghetti Bolognese");
+
+  await goTo(page, "Plan");
   await expect(dayPicker(page, "Monday")).toHaveAccessibleName("Monday: Spaghetti Bolognese");
   await expect(dayPicker(page, "Wednesday")).toHaveAccessibleName("Wednesday: no meal");
 
