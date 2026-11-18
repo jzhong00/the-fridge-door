@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/fraunces";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -20,7 +21,9 @@
 
 
 @theme inline {
-  --font-heading: var(--font-sans);
+  /* Headings in a serif, interface text in Geist: the one touch of
+     personality, kept to titles so everything you read in bulk stays plain. */
+  --font-heading: 'Fraunces Variable', Georgia, serif;
   --font-sans: 'Geist Variable', sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);

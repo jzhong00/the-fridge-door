@@ -162,12 +162,17 @@ export function usePlanner() {
       () => undefined,
     );
 
+  /** As `run`, but resolving with the result, or null if it failed. */
+  const runFor = <T,>(promise: Promise<T>): Promise<T | null> =>
+    promise.catch(() => null);
+
   const actions = {
+    // Resolve with the new meal, so the page can open it straight away.
     addMeal: (name: string, servings: number) =>
-      run(mealChange.mutateAsync(() => api.createMeal(name, servings))),
+      runFor(mealChange.mutateAsync(() => api.createMeal(name, servings))),
 
     addFromTemplate: (templateName: string) =>
-      run(mealChange.mutateAsync(() => api.createMealFromTemplate(templateName))),
+      runFor(mealChange.mutateAsync(() => api.createMealFromTemplate(templateName))),
 
     updateMeal: (id: number, name: string, servings: number) =>
       run(mealChange.mutateAsync(() => api.updateMeal(id, name, servings))),

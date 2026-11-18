@@ -43,6 +43,12 @@ describe("changing page", () => {
     expect(window.history.length).toBe(before + 1);
   });
 
+  it("leaves behind what belonged to the last page", () => {
+    window.history.replaceState(null, "", "/meals?week=2026-08-03&meal=4");
+    navigate("/plan");
+    expect(here()).toBe("/plan?week=2026-08-03");
+  });
+
   it("does nothing when already there", () => {
     window.history.replaceState(null, "", "/plan");
     const before = window.history.length;

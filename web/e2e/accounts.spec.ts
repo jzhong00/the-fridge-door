@@ -16,7 +16,7 @@ test("each visitor gets their own guest session, invisible to anyone else", asyn
     await addMeal(mine, name);
 
     await openWeek(theirs, "2026-03-02");
-    await expect(theirs.getByLabel("Meal name")).toBeVisible();
+    await expect(theirs.getByLabel("Search meals")).toBeVisible();
     await expect(mealRow(theirs, name)).toHaveCount(0);
 
     // The first visitor's session survives a reload: the cookie is the account.
