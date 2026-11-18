@@ -62,19 +62,32 @@ export function dayPicker(page: Page, day: string) {
   return page.getByRole("button", { name: new RegExp(`^${day}: `) });
 }
 
+/** The meal search for one day, once it is open. */
+export function mealSearch(page: Page, day: string) {
+  return page.getByRole("dialog", { name: `Choose a meal for ${day}` });
+}
+
 /**
  * Plan a meal on a day as a person does (open the day, type the name, Enter)
  * and wait until the change has been saved to the server.
+ *
+ * Everything is looked up inside this day's own search, and the search is
+ * gone before this returns. A search that has just closed fades out for a
+ * moment; without both, planning the next day straight after could find
+ * the previous day's search still on its way out (seen on CI's slower
+ * machines, never locally).
  */
 export async function planDay(page: Page, day: string, meal: string) {
   await dayPicker(page, day).click();
-  await expect(page.getByRole("combobox", { name: "Search meals" })).toBeFocused();
+  const search = mealSearch(page, day);
+  await expect(search.getByRole("combobox", { name: "Search meals" })).toBeFocused();
   await page.keyboard.type(meal);
-  await expect(page.getByRole("option").first()).toContainText(meal);
+  await expect(search.getByRole("option").first()).toContainText(meal);
   const saved = page.waitForResponse(
     (r) => r.request().method() === "PUT" && r.url().includes("/api/plan/"),
   );
   await page.keyboard.press("Enter");
   expect((await saved).ok()).toBe(true);
   await expect(dayPicker(page, day)).toHaveAccessibleName(`${day}: ${meal}`);
+  await expect(search).toHaveCount(0);
 }
