@@ -7,7 +7,16 @@
 
 import { expect, test } from "@playwright/test";
 
-import { addMeal, chooseOption, goTo, mealRow, openWeek, pageLink, uniqueName } from "./helpers.ts";
+import {
+  addMeal,
+  dayPicker,
+  goTo,
+  mealRow,
+  openWeek,
+  pageLink,
+  planDay,
+  uniqueName,
+} from "./helpers.ts";
 
 test("add a meal", async ({ page }) => {
   await openWeek(page, "2026-01-05");
@@ -60,22 +69,38 @@ test("add ingredients straight after creating a meal, and edit an amount", async
   await expect(page.getByRole("button", { name: "Edit Rice" })).toContainText("300 g");
 });
 
-test("plan a week and save it", async ({ page }) => {
+test("plan a week: it saves itself, and survives a reload", async ({ page }) => {
   await openWeek(page, "2026-01-12");
   const name = uniqueName("Shakshuka");
   await addMeal(page, name, 2);
 
   await goTo(page, "Plan");
-  await chooseOption(page, "Monday", name);
-  await expect(page.getByLabel("Serves")).toHaveValue("2");
-  await page.getByRole("button", { name: "Save plan" }).click();
-  await expect(page.getByRole("button", { name: "Save plan" })).toBeDisabled();
+  await planDay(page, "Monday", name);
+  // The recipe's own serving size, until changed.
+  await expect(page.getByRole("listitem", { name: "Monday" })).toContainText("Serves2");
+  await page.getByRole("button", { name: "More servings on Monday" }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
   // The URL keeps the page and week, so a reload lands on the saved plan.
   await page.reload();
   await expect(page).toHaveURL(/\/plan\?week=2026-01-12$/);
   await expect(pageLink(page, "Plan")).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("combobox", { name: "Monday" })).toContainText(name);
+  await expect(dayPicker(page, "Monday")).toHaveAccessibleName(`Monday: ${name}`);
+  await expect(page.getByRole("listitem", { name: "Monday" })).toContainText("Serves3");
+});
+
+test("plan a meal that does not exist yet, from the plan itself", async ({ page }) => {
+  await openWeek(page, "2026-01-12", "plan");
+  const name = uniqueName("Fish Pie");
+
+  await dayPicker(page, "Thursday").click();
+  await expect(page.getByRole("combobox", { name: "Search meals" })).toBeFocused();
+  await page.keyboard.type(name);
+  await page.getByRole("option", { name: new RegExp(`New meal “${name}”`) }).click();
+
+  await expect(dayPicker(page, "Thursday")).toHaveAccessibleName(`Thursday: ${name}`);
+  await goTo(page, "Meals");
+  await expect(mealRow(page, name)).toBeVisible();
 });
 
 test("the grocery list totals the week and converts units", async ({ page }) => {
@@ -84,10 +109,8 @@ test("the grocery list totals the week and converts units", async ({ page }) => 
   await expect(mealRow(page, "Spaghetti Bolognese")).toBeVisible();
 
   await goTo(page, "Plan");
-  await chooseOption(page, "Monday", "Spaghetti Bolognese");
-  await chooseOption(page, "Tuesday", "Spaghetti Bolognese");
-  await page.getByRole("button", { name: "Save plan" }).click();
-  await expect(page.getByRole("button", { name: "Save plan" })).toBeDisabled();
+  await planDay(page, "Monday", "Spaghetti Bolognese");
+  await planDay(page, "Tuesday", "Spaghetti Bolognese");
 
   await goTo(page, "Groceries");
   await page.getByRole("button", { name: "Generate list" }).click();
@@ -97,20 +120,19 @@ test("the grocery list totals the week and converts units", async ({ page }) => 
   await expect(page.getByRole("button", { name: /^Beef Mince\s*1 kg$/ })).toBeVisible();
 });
 
-test("copy last week's plan forward", async ({ page }) => {
-  await openWeek(page, "2026-01-26", "plan");
+test("copy last week's plan forward, and undo it", async ({ page }) => {
+  await openWeek(page, "2026-01-26");
   const name = uniqueName("Pho");
-  await goTo(page, "Meals");
   await addMeal(page, name);
   await goTo(page, "Plan");
-  await chooseOption(page, "Wednesday", name);
-  await page.getByRole("button", { name: "Save plan" }).click();
-  await expect(page.getByRole("button", { name: "Save plan" })).toBeDisabled();
+  await planDay(page, "Wednesday", name);
 
   await page.getByRole("button", { name: "Next week" }).click();
   await expect(page.getByLabel("Week starting")).toHaveValue("2026-02-02");
-  await expect(page.getByRole("combobox", { name: "Wednesday" })).toContainText("No meal");
-  await page.getByRole("button", { name: "Copy previous week" }).click();
+  await expect(dayPicker(page, "Wednesday")).toHaveAccessibleName("Wednesday: no meal");
+  await page.getByRole("button", { name: "Copy last week" }).click();
+  await expect(dayPicker(page, "Wednesday")).toHaveAccessibleName(`Wednesday: ${name}`);
 
-  await expect(page.getByRole("combobox", { name: "Wednesday" })).toContainText(name);
+  await page.getByRole("button", { name: "Undo copying last week" }).click();
+  await expect(dayPicker(page, "Wednesday")).toHaveAccessibleName("Wednesday: no meal");
 });

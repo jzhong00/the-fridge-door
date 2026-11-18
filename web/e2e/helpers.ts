@@ -1,15 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
 /**
- * Choose an option from a Base UI Select. It is not a native <select>: the
- * trigger opens a listbox in a portal, and the option is clicked.
- */
-export async function chooseOption(page: Page, trigger: string, option: string) {
-  await page.getByRole("combobox", { name: trigger }).click();
-  await page.getByRole("option", { name: option, exact: true }).click();
-}
-
-/**
  * A meal name no other spec uses. The specs share one database, and meal
  * names are unique, so each spec names its own meals.
  */
@@ -62,4 +53,26 @@ export function pageLink(page: Page, label: "Meals" | "Plan" | "Groceries") {
   return page
     .getByRole("navigation", { name: "Pages" })
     .getByRole("link", { name: label, exact: true });
+}
+
+/** A day's meal button on the plan, named "Monday: Tacos" or "Monday: no meal". */
+export function dayPicker(page: Page, day: string) {
+  return page.getByRole("button", { name: new RegExp(`^${day}: `) });
+}
+
+/**
+ * Plan a meal on a day as a person does (open the day, type the name, Enter)
+ * and wait until the change has been saved to the server.
+ */
+export async function planDay(page: Page, day: string, meal: string) {
+  await dayPicker(page, day).click();
+  await expect(page.getByRole("combobox", { name: "Search meals" })).toBeFocused();
+  await page.keyboard.type(meal);
+  await expect(page.getByRole("option").first()).toContainText(meal);
+  const saved = page.waitForResponse(
+    (r) => r.request().method() === "PUT" && r.url().includes("/api/plan/"),
+  );
+  await page.keyboard.press("Enter");
+  expect((await saved).ok()).toBe(true);
+  await expect(dayPicker(page, day)).toHaveAccessibleName(`${day}: ${meal}`);
 }

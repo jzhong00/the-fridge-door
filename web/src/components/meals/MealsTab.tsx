@@ -44,7 +44,9 @@ export function MealsTab({ state, pending, ...props }: Props) {
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
+    // The open meal stops at a reading width: on a wide screen an ingredient's
+    // amount would otherwise sit a long way from its name.
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,52rem)] lg:items-start">
       <MealList
         meals={state.meals}
         plan={state.plan}

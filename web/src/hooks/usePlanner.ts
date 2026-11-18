@@ -197,11 +197,14 @@ export function usePlanner() {
     removeIngredient: (mealId: number, ingredientId: number) =>
       run(mealChange.mutateAsync(() => api.removeIngredient(mealId, ingredientId))),
 
-    savePlan: (days: AppState["plan"]) =>
-      run(planChange.mutateAsync(() => api.setPlan(week, days))),
+    // The week is named by the caller, not read from the URL at send time:
+    // a save made just before changing week must still land on its own week.
+    // Both resolve with the saved plan, or null if it failed.
+    savePlan: (weekStart: string, days: AppState["plan"]) =>
+      runFor(planChange.mutateAsync(() => api.setPlan(weekStart, days))),
 
-    copyPreviousWeek: () =>
-      run(planChange.mutateAsync(() => api.copyPreviousWeek(week))),
+    copyPreviousWeek: (weekStart: string) =>
+      runFor(planChange.mutateAsync(() => api.copyPreviousWeek(weekStart))),
 
     generateGroceryList: async () => {
       clearError();

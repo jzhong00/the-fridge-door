@@ -78,7 +78,10 @@ export default function App() {
         )}
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      {/* Aligned with the title above, not centred, and as wide as the
+          screen allows up to a limit, so a big monitor gets bigger cards
+          rather than wider margins. */}
+      <main className="max-w-[1680px] px-4 py-6 sm:px-6 lg:px-8">
         {session.notice && (
           <div
             role="status"
@@ -142,6 +145,7 @@ export default function App() {
                 pending={planner.planPending}
                 onSave={planner.savePlan}
                 onCopyPrevious={planner.copyPreviousWeek}
+                onCreateMeal={planner.addMeal}
               />
             )}
             {page.id === "groceries" && (

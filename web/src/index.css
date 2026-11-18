@@ -10,6 +10,11 @@
    low enough to read as a palette rather than a rainbow, and lightness
    mid enough to show on both the light and the dark surface. */
 @theme {
+  /* Wide enough for seven day cards across, each with room for a meal's
+     name and its servings. A named breakpoint rather than min-[1400px]:,
+     which Tailwind orders before lg: so the four-column rule won. */
+  --breakpoint-week: 87.5rem;
+
   --color-mon: oklch(0.70 0.16 25);
   --color-tue: oklch(0.74 0.15 60);
   --color-wed: oklch(0.76 0.14 100);
