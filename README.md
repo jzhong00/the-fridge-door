@@ -80,6 +80,15 @@ unscoped, and someone else's meal answers 404, never 403.
   Repositories filter by user, and the database filters again, so a query
   that forgot its filter still returns nothing of anyone else's.
   ([database-schema.md](docs/database-schema.md#row-level-security-postgres))
+- **Leaving:** the Account page downloads everything that is yours as
+  readable JSON (meals, ingredients, every planned day; names rather than
+  internal ids, and never a password hash or token), and deletes the
+  account in one statement that cascades to every row it owns, ending every
+  session. An account confirms with its password, throttled together with
+  login so a stolen session cannot use it to guess; a guest needs nothing.
+  Tests check that deletion leaves no row of the account's in any table
+  (found from the models, so a new table is covered) and touches no one
+  else's, including as the app's restricted role under row security.
 - **Tests:** every API route is checked, from the OpenAPI document, to
   answer 401 without a session, so a new route cannot ship open. The row
   security tests run connected as the app's own role, against a schema
