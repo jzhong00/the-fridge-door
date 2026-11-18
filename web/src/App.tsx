@@ -44,7 +44,9 @@ function pageAt(path: string): Page {
 
 export default function App() {
   const page = pageAt(usePathname());
-  const planner = usePlanner({ loadGroceries: page.id === "home" });
+  const planner = usePlanner({
+    loadGroceries: page.id === "home" || page.id === "groceries",
+  });
   const session = useAccount();
   const theme = useTheme();
   // Home is named for the week it shows: "This week", "Next week"...
@@ -168,8 +170,7 @@ export default function App() {
               <GroceryTab
                 weekStart={planner.state.week_start}
                 lines={planner.grocery}
-                pending={planner.groceryPending}
-                onGenerate={planner.generateGroceryList}
+                plannedDays={planner.state.plan.filter((d) => d.meal_id !== null).length}
               />
             )}
           </div>

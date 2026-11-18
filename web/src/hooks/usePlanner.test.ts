@@ -53,11 +53,11 @@ beforeEach(() => {
 });
 
 /** Render with a fresh cache, and wait for the initial bootstrap to land. */
-async function renderPlanner() {
+async function renderPlanner(options: Parameters<typeof usePlanner>[0] = {}) {
   const client = createQueryClient({ retry: false });
   const wrapper = ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client }, children);
-  const view = renderHook(() => usePlanner(), { wrapper });
+  const view = renderHook(() => usePlanner(options), { wrapper });
   await waitFor(() => expect(view.result.current.state).not.toBeNull());
   return view;
 }
@@ -212,35 +212,53 @@ describe("weeks already visited", () => {
 });
 
 describe("the grocery list", () => {
-  const lines = [{ name: "Pasta", qty: 400, unit: "g", display: "400 g" }];
+  const thisWeek = [{ name: "Pasta", qty: 400, unit: "g", display: "400 g" }];
+  const nextWeek = [{ name: "Rice", qty: 300, unit: "g", display: "300 g" }];
 
-  it("belongs to the week it was generated for", async () => {
-    const { result } = await renderPlanner();
-    mocked.getGroceryList.mockResolvedValue(lines);
-
-    await act(() => result.current.generateGroceryList());
-    expect(result.current.grocery).toEqual(lines);
-
-    // A list for last week must not be shown as if it were this week's.
-    act(() => result.current.setWeek("2026-08-31"));
-    await waitFor(() =>
-      expect(result.current.state?.week_start).toBe("2026-08-31"),
+  beforeEach(() => {
+    mocked.getGroceryList.mockImplementation(async (week: string) =>
+      week === "2026-08-24" ? thisWeek : nextWeek,
     );
-    expect(result.current.grocery).toBeNull();
   });
 
-  it("comes back when you return to that week", async () => {
-    const { result } = await renderPlanner();
-    mocked.getGroceryList.mockResolvedValue(lines);
+  it("loads itself on a page that shows it, and not on any other", async () => {
+    const elsewhere = await renderPlanner();
+    expect(elsewhere.result.current.grocery).toBeNull();
+    expect(mocked.getGroceryList).not.toHaveBeenCalled();
+    elsewhere.unmount();
 
-    await act(() => result.current.generateGroceryList());
+    const { result } = await renderPlanner({ loadGroceries: true });
+    await waitFor(() => expect(result.current.grocery).toEqual(thisWeek));
+    expect(mocked.getGroceryList).toHaveBeenCalledWith("2026-08-24");
+  });
+
+  it("belongs to its week, and comes back from memory on returning", async () => {
+    const { result } = await renderPlanner({ loadGroceries: true });
+    await waitFor(() => expect(result.current.grocery).toEqual(thisWeek));
+
     act(() => result.current.setWeek("2026-08-31"));
-    await waitFor(() => expect(result.current.grocery).toBeNull());
+    await waitFor(() => expect(result.current.grocery).toEqual(nextWeek));
 
     act(() => result.current.setWeek("2026-08-24"));
+    await waitFor(() => expect(result.current.grocery).toEqual(thisWeek));
+    expect(mocked.getGroceryList).toHaveBeenCalledTimes(2);
+  });
 
-    await waitFor(() => expect(result.current.grocery).toEqual(lines));
-    expect(mocked.getGroceryList).toHaveBeenCalledTimes(1);
+  it("is fetched again after the plan changes, since it is made from the plan", async () => {
+    mocked.setPlan.mockImplementation(async (week: string) => ({ week_start: week, days: [] }));
+    const { result } = await renderPlanner({ loadGroceries: true });
+    await waitFor(() => expect(result.current.grocery).toEqual(thisWeek));
+
+    await act(() => result.current.savePlan("2026-08-24", []));
+
+    await waitFor(() => expect(mocked.getGroceryList).toHaveBeenCalledTimes(2));
+  });
+
+  it("reports a list that fails to load", async () => {
+    mocked.getGroceryList.mockRejectedValue(new ApiError(500, "The list could not be made."));
+    const { result } = await renderPlanner({ loadGroceries: true });
+
+    await waitFor(() => expect(result.current.error).toBe("The list could not be made."));
   });
 });
 
