@@ -3,12 +3,14 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { AccountBar } from "@/components/AccountBar";
 import { GroceryTab } from "@/components/GroceryTab";
 import { MealsTab } from "@/components/meals/MealsTab";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { WeeklyPlanTab } from "@/components/WeeklyPlanTab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAccount } from "@/hooks/useAccount";
 import { usePlanner } from "@/hooks/usePlanner";
+import { useTheme } from "@/hooks/useTheme";
 import { addDays, formatWeekRange, mondayOf } from "@/lib/dates";
 import { useSearchParam } from "@/lib/searchParams";
 
@@ -28,12 +30,14 @@ function parseTab(raw: string | null): Tab {
 export default function App() {
   const planner = usePlanner();
   const session = useAccount();
+  const theme = useTheme();
   // In the URL, so a refresh or a shared link opens the same tab.
   const [tab, setTab] = useSearchParam("tab", parseTab);
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-10 lg:px-10">
-      <div className="mb-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <ThemeSwitcher theme={theme.theme} onChange={theme.setTheme} />
         <AccountBar
           account={session.account}
           onSignUp={session.signUp}
