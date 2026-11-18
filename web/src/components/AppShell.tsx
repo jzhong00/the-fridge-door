@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import { UtensilsCrossed } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
 
-import { navigate, useSearch } from "@/lib/location";
+import { carriedSearch, navigate, useSearch } from "@/lib/location";
 
 export interface NavPage {
   id: string;
@@ -85,7 +85,7 @@ function NavLink({ page, active }: { page: NavPage; active: boolean }) {
   const Icon = page.icon;
   return (
     <a
-      href={page.path + search}
+      href={page.path + carriedSearch(search)}
       onClick={followInApp(page.path)}
       aria-current={active ? "page" : undefined}
       className="flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-primary-subtle aria-[current=page]:text-primary-subtle-foreground lg:flex-row lg:gap-3 lg:py-2 lg:text-sm"

@@ -51,7 +51,9 @@ export function useSearchParam<T extends string>(
   const setValue = useCallback(
     (next: T) => {
       const url = new URL(window.location.href);
-      url.searchParams.set(name, next);
+      // An empty value removes the parameter rather than leaving `?name=`.
+      if (next) url.searchParams.set(name, next);
+      else url.searchParams.delete(name);
       window.history.replaceState(window.history.state, "", url);
       changed();
     },
@@ -80,12 +82,19 @@ export function usePathname(): string {
 }
 
 /**
- * Go to another page, keeping the query string: the week a person is
- * looking at stays the same when they change page.
+ * The part of a query string that follows a person from page to page: the
+ * week they are looking at. Anything else belongs to the page it was set on
+ * (which meal is open, say), and is left behind.
  */
+export function carriedSearch(search: string): string {
+  const week = new URLSearchParams(search).get("week");
+  return week ? `?${new URLSearchParams({ week })}` : "";
+}
+
+/** Go to another page, keeping the week. */
 export function navigate(path: string): void {
   if (path === window.location.pathname) return;
-  window.history.pushState(null, "", path + window.location.search);
+  window.history.pushState(null, "", path + carriedSearch(window.location.search));
   window.scrollTo(0, 0);
   changed();
 }

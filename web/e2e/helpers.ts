@@ -17,20 +17,24 @@ export function uniqueName(base: string): string {
   return `${base} ${Math.random().toString(36).slice(2, 7)}`;
 }
 
-/** Add a meal through the form on the Meals tab, and wait for it to appear. */
+/**
+ * Add a meal the way a person does: New meal, a name and servings, Create.
+ * The new meal then opens, ready for its ingredients.
+ */
 export async function addMeal(page: Page, name: string, servings = 4) {
+  await page
+    .getByRole("region", { name: "Your meals" })
+    .getByRole("button", { name: "New meal" })
+    .click();
   await page.getByLabel("Meal name").fill(name);
   await page.getByLabel("Servings").fill(String(servings));
-  await page.getByRole("button", { name: "Add meal" }).click();
-  await expect(mealRow(page, name)).toBeVisible();
+  await page.getByRole("button", { name: "Create meal" }).click();
+  await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
 }
 
-/**
- * A meal in the "Your meals" list, found by its edit button. The name alone
- * is ambiguous: it also appears in the ingredient editor's meal picker.
- */
+/** A meal in the list of meals. */
 export function mealRow(page: Page, name: string) {
-  return page.getByRole("button", { name: `Edit ${name}`, exact: true });
+  return page.getByRole("article", { name, exact: true });
 }
 
 type PageName = "meals" | "plan" | "groceries";
@@ -43,7 +47,7 @@ type PageName = "meals" | "plan" | "groceries";
 export async function openWeek(page: Page, week: string, where: PageName = "meals") {
   await page.goto(`/${where}?week=${week}`);
   if (where === "meals") {
-    await expect(page.getByLabel("Meal name")).toBeVisible();
+    await expect(page.getByLabel("Search meals")).toBeVisible();
   } else {
     await expect(page.getByLabel("Week starting")).toHaveValue(week);
   }

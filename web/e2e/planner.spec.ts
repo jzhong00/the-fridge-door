@@ -21,41 +21,42 @@ test("add a meal", async ({ page }) => {
 test("add a meal from a template, ingredients included", async ({ page }) => {
   await openWeek(page, "2026-01-05");
 
-  await page.getByRole("button", { name: /Quick add from templates/ }).click();
+  await page.getByRole("button", { name: "New meal", exact: true }).click();
   await page.getByRole("button", { name: "Add Chicken Stir Fry" }).click();
 
-  await expect(mealRow(page, "Chicken Stir Fry")).toBeVisible();
-  // Within its own card: the sample meals a guest starts with have
-  // summaries too.
-  await expect(
-    page.getByRole("article", { name: "Chicken Stir Fry" }).getByText("Serves 4 · 5 ingredients"),
-  ).toBeVisible();
+  // It opens, ingredients and all.
+  await expect(page.getByRole("heading", { level: 2, name: "Chicken Stir Fry" })).toBeVisible();
+  await expect(mealRow(page, "Chicken Stir Fry")).toContainText("Serves 4 · 5 ingredients");
   // The template is marked as added, so it cannot be added twice.
+  await page.getByRole("button", { name: "New meal", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Chicken Stir Fry (added)" }),
   ).toBeDisabled();
 });
 
-test("add an ingredient and edit its amount", async ({ page }) => {
+test("add ingredients straight after creating a meal, and edit an amount", async ({ page }) => {
   await openWeek(page, "2026-01-05");
   const name = uniqueName("Fried Rice");
   await addMeal(page, name);
-  await chooseOption(page, "Select meal", name);
 
-  await page.getByLabel("Ingredient", { exact: true }).fill("Rice");
+  // No hunting for the meal: it is open, and the cursor is waiting.
+  await expect(page.getByLabel("Ingredient", { exact: true })).toBeFocused();
+  await page.keyboard.type("Rice");
   await page.getByLabel("Quantity", { exact: true }).fill("200");
   await page.getByLabel("Unit", { exact: true }).fill("g");
-  await page.getByRole("button", { name: "Add ingredient" }).click();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Edit Rice" })).toContainText("200 g");
+  // Ready for the next one.
+  await expect(page.getByLabel("Ingredient", { exact: true })).toBeFocused();
 
   await page.getByRole("button", { name: "Edit Rice" }).click();
   await page.getByLabel("Quantity of Rice").fill("300");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Edit Rice" })).toContainText("300 g");
-  // Saved to the server, not just the screen.
+
+  // Saved to the server, and the URL reopens the same meal.
   await page.reload();
-  await chooseOption(page, "Select meal", name);
+  await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit Rice" })).toContainText("300 g");
 });
 
