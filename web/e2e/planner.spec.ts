@@ -12,6 +12,7 @@ import {
   dayPicker,
   goTo,
   mealRow,
+  mealSearch,
   openWeek,
   pageLink,
   planDay,
@@ -94,9 +95,10 @@ test("plan a meal that does not exist yet, from the plan itself", async ({ page 
   const name = uniqueName("Fish Pie");
 
   await dayPicker(page, "Thursday").click();
-  await expect(page.getByRole("combobox", { name: "Search meals" })).toBeFocused();
+  const search = mealSearch(page, "Thursday");
+  await expect(search.getByRole("combobox", { name: "Search meals" })).toBeFocused();
   await page.keyboard.type(name);
-  await page.getByRole("option", { name: new RegExp(`New meal “${name}”`) }).click();
+  await search.getByRole("option", { name: new RegExp(`New meal “${name}”`) }).click();
 
   await expect(dayPicker(page, "Thursday")).toHaveAccessibleName(`Thursday: ${name}`);
   await goTo(page, "Meals");
@@ -160,9 +162,10 @@ test("home: plan the focal day in place, then any other day in one click", async
     (r) => r.request().method() === "PUT" && r.url().includes("/api/plan/"),
   );
   await page.getByRole("button", { name: "Choose a meal for Monday" }).click();
-  await expect(page.getByRole("combobox", { name: "Search meals" })).toBeFocused();
+  const mondaySearch = mealSearch(page, "Monday");
+  await expect(mondaySearch.getByRole("combobox", { name: "Search meals" })).toBeFocused();
   await page.keyboard.type(soup);
-  await expect(page.getByRole("option").first()).toContainText(soup);
+  await expect(mondaySearch.getByRole("option").first()).toContainText(soup);
   await page.keyboard.press("Enter");
   expect((await saved).ok()).toBe(true);
   await expect(monday).toContainText(soup);
@@ -171,12 +174,13 @@ test("home: plan the focal day in place, then any other day in one click", async
   // The next night to plan is a click away, its search already open.
   await page.getByRole("link", { name: /^Nights planned/ }).click();
   await expect(page).toHaveURL(/\/plan\?week=2026-02-09$/);
-  await expect(page.getByRole("combobox", { name: "Search meals" })).toBeFocused();
+  const tuesdaySearch = mealSearch(page, "Tuesday");
+  await expect(tuesdaySearch.getByRole("combobox", { name: "Search meals" })).toBeFocused();
   const second = page.waitForResponse(
     (r) => r.request().method() === "PUT" && r.url().includes("/api/plan/"),
   );
   await page.keyboard.type(pie);
-  await expect(page.getByRole("option").first()).toContainText(pie);
+  await expect(tuesdaySearch.getByRole("option").first()).toContainText(pie);
   await page.keyboard.press("Enter");
   expect((await second).ok()).toBe(true);
   await expect(dayPicker(page, "Tuesday")).toHaveAccessibleName(`Tuesday: ${pie}`);
