@@ -112,12 +112,20 @@ test("the grocery list totals the week and converts units", async ({ page }) => 
   await planDay(page, "Monday", "Spaghetti Bolognese");
   await planDay(page, "Tuesday", "Spaghetti Bolognese");
 
+  // The list is there on arrival: no button to press first.
   await goTo(page, "Groceries");
-  await page.getByRole("button", { name: "Generate list" }).click();
 
   // Two nights of a recipe using 400 g pasta and 500 g mince.
-  await expect(page.getByRole("button", { name: /^Pasta\s*800 g$/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Beef Mince\s*1 kg$/ })).toBeVisible();
+  const pasta = page.getByRole("checkbox", { name: "Pasta 800 g" });
+  await expect(pasta).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Beef Mince 1 kg" })).toBeVisible();
+
+  // Ticked off, it drops into the basket, and stays there after a reload.
+  await pasta.check();
+  const basket = page.getByRole("region", { name: /^In the basket/ });
+  await expect(basket.getByRole("checkbox", { name: "Pasta 800 g" })).toBeChecked();
+  await page.reload();
+  await expect(basket.getByRole("checkbox", { name: "Pasta 800 g" })).toBeChecked();
 });
 
 test("copy last week's plan forward, and undo it", async ({ page }) => {

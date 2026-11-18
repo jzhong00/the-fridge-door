@@ -6,7 +6,7 @@
  * - the library (meals, ingredient names, templates), which does not vary by
  *   week;
  * - one plan per week visited;
- * - one grocery list per week it was generated for.
+ * - one grocery list per week, fetched by the pages that show it.
  *
  * The first load is a single request (`/api/state`) that fills the library
  * and seeds the current week's plan, so nothing else is fetched. Changing
@@ -38,9 +38,8 @@ export function usePlanner({
   loadGroceries = false,
 }: {
   /**
-   * Fetch the week's grocery list without being asked, and again whenever a
-   * change outdates it: for a page that shows it, such as the home page's
-   * item count. Otherwise it is fetched only by `generateGroceryList`.
+   * Fetch the week's grocery list, and again whenever a change outdates it:
+   * for the pages that show it (the list, and home's count of items).
    */
   loadGroceries?: boolean;
 } = {}) {
@@ -78,8 +77,8 @@ export function usePlanner({
   });
 
   // Held per week: returning to a week shows the list already fetched for
-  // it. A change resets it (below): fetched again straight away when
-  // loading itself, otherwise left for the next "Generate".
+  // it. A change resets it (below): fetched again straight away on a page
+  // that shows it, and otherwise when one next does.
   const grocery = useQuery({
     queryKey: queryKeys.grocery(week),
     queryFn: () => api.getGroceryList(week),
@@ -216,11 +215,6 @@ export function usePlanner({
     copyPreviousWeek: (weekStart: string) =>
       runFor(planChange.mutateAsync(() => api.copyPreviousWeek(weekStart))),
 
-    generateGroceryList: async () => {
-      clearError();
-      const result = await grocery.refetch();
-      if (result.error) report(result.error);
-    },
   };
 
   const state: AppState | null =
@@ -229,7 +223,7 @@ export function usePlanner({
       : null;
 
   // A failed load stays visible until dismissed; a failed action replaces it.
-  const loadError = library.error ?? plan.error;
+  const loadError = library.error ?? plan.error ?? grocery.error;
   const error =
     actionError ??
     (loadError && loadError !== dismissedError ? describe(loadError) : null);
@@ -247,7 +241,6 @@ export function usePlanner({
     // Pending work per area, so one slow save does not freeze the whole app.
     mealsPending: mealChange.isPending || mealDeletion.isPending,
     planPending: planChange.isPending,
-    groceryPending: grocery.isFetching,
     grocery: grocery.data ?? null,
     ...actions,
   };

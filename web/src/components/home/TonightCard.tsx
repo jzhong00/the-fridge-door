@@ -117,7 +117,7 @@ export function TonightCard({
                   </span>
                 )}
               </h3>
-              <ul className="mt-2 grid gap-x-8 text-sm sm:grid-cols-2">
+              <ul className="mt-2 grid gap-x-8 text-sm sm:grid-cols-2 week:grid-cols-3">
                 {ingredients.map((ingredient) => (
                   <li
                     key={ingredient.ingredient_id}

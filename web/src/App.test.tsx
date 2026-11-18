@@ -71,12 +71,17 @@ describe("pages", () => {
     expect(heading()).toHaveTextContent("Weekly plan");
   });
 
-  it("loads the grocery list for home's count, and only there", async () => {
+  it("loads the grocery list only on the pages that show it", async () => {
+    const user = userEvent.setup();
     await renderApp("/meals");
+    await user.click(screen.getByRole("link", { name: "Plan" }));
     expect(mocked.getGroceryList).not.toHaveBeenCalled();
 
-    await userEvent.setup().click(screen.getByRole("link", { name: "This week" }));
+    await user.click(screen.getByRole("link", { name: "Groceries" }));
     await waitFor(() => expect(mocked.getGroceryList).toHaveBeenCalledTimes(1));
+    // Home's count is the same list, already in memory.
+    await user.click(screen.getByRole("link", { name: "This week" }));
+    expect(mocked.getGroceryList).toHaveBeenCalledTimes(1);
   });
 
   it("opens the page in the link", async () => {
