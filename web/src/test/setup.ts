@@ -19,3 +19,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
+// jsdom has no layout, so it reports `scrollTo` as not implemented (loudly).
+// Changing page scrolls to the top; here there is nothing to scroll.
+window.scrollTo = () => {};

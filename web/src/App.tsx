@@ -1,108 +1,115 @@
+import { CalendarDays, ShoppingBasket, UtensilsCrossed } from "lucide-react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useEffect } from "react";
 
 import { AccountBar } from "@/components/AccountBar";
+import { AppShell, type NavPage } from "@/components/AppShell";
 import { GroceryTab } from "@/components/GroceryTab";
 import { MealsTab } from "@/components/meals/MealsTab";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { WeeklyPlanTab } from "@/components/WeeklyPlanTab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAccount } from "@/hooks/useAccount";
 import { usePlanner } from "@/hooks/usePlanner";
 import { useTheme } from "@/hooks/useTheme";
 import { addDays, formatWeekRange, mondayOf } from "@/lib/dates";
-import { useSearchParam } from "@/lib/searchParams";
+import { usePathname } from "@/lib/location";
 
-const TABS = [
-  { value: "meals", label: "Meals" },
-  { value: "plan", label: "Weekly Plan" },
-  { value: "grocery", label: "Grocery List" },
-] as const;
+const APP_NAME = "Meal Planner";
 
-type Tab = (typeof TABS)[number]["value"];
+interface Page extends NavPage {
+  /** The heading at the top of the page, and the browser tab's title. */
+  title: string;
+  /** Whether what the page shows depends on the week, so it has a picker. */
+  weekly: boolean;
+}
 
-/** The tab named in the URL, or the first tab for anything unrecognised. */
-function parseTab(raw: string | null): Tab {
-  return TABS.find((tab) => tab.value === raw)?.value ?? "meals";
+/** In the order a week is put together: meals, then the plan, then shopping. */
+const PAGES: readonly Page[] = [
+  { id: "meals", path: "/meals", label: "Meals", title: "Meals", icon: UtensilsCrossed, weekly: false },
+  { id: "plan", path: "/plan", label: "Plan", title: "Weekly plan", icon: CalendarDays, weekly: true },
+  { id: "groceries", path: "/groceries", label: "Groceries", title: "Groceries", icon: ShoppingBasket, weekly: true },
+];
+
+/** The page at a path. The plan is home, and anything unknown goes there. */
+function pageAt(path: string): Page {
+  return PAGES.find((page) => page.path === path) ?? PAGES[1];
 }
 
 export default function App() {
   const planner = usePlanner();
   const session = useAccount();
   const theme = useTheme();
-  // In the URL, so a refresh or a shared link opens the same tab.
-  const [tab, setTab] = useSearchParam("tab", parseTab);
+  const page = pageAt(usePathname());
+
+  useEffect(() => {
+    document.title = `${page.title} · ${APP_NAME}`;
+  }, [page.title]);
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-10 lg:px-10">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <ThemeSwitcher theme={theme.theme} onChange={theme.setTheme} />
-        <AccountBar
-          account={session.account}
-          onSignUp={session.signUp}
-          onLogIn={session.logIn}
-          onLogOut={session.logOut}
-          loggingOut={session.loggingOut}
-        />
-      </div>
-
-      {session.notice && (
-        <div
-          role="status"
-          className="mb-6 flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-sm"
-        >
-          <span>{session.notice}</span>
-          <button
-            onClick={session.dismissNotice}
-            aria-label="Dismiss"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
-
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Weekly Meal Planner
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Plan your week, then take the grocery list with you.
-          </p>
-        </div>
-        <WeekPicker
-          week={planner.week}
-          onChange={planner.setWeek}
-          disabled={planner.loading}
-        />
+    <AppShell
+      pages={PAGES}
+      current={page.id}
+      footer={
+        <>
+          <AccountBar
+            account={session.account}
+            onSignUp={session.signUp}
+            onLogIn={session.logIn}
+            onLogOut={session.logOut}
+            loggingOut={session.loggingOut}
+          />
+          <div className="flex items-center justify-between gap-3">
+            <span className="hidden text-xs text-muted-foreground lg:inline">Theme</span>
+            <ThemeSwitcher theme={theme.theme} onChange={theme.setTheme} />
+          </div>
+        </>
+      }
+    >
+      <header className="flex min-h-16 flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b px-4 py-3 sm:px-6 lg:px-8">
+        <h1 className="text-xl font-semibold tracking-tight">{page.title}</h1>
+        {page.weekly && (
+          <WeekPicker
+            week={planner.week}
+            onChange={planner.setWeek}
+            disabled={planner.loading}
+          />
+        )}
       </header>
 
-      {planner.error && (
-        <div
-          role="alert"
-          className="mb-6 flex items-start justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
-        >
-          <span>{planner.error}</span>
-          <button
-            onClick={planner.dismissError}
-            aria-label="Dismiss"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        {session.notice && (
+          <div
+            role="status"
+            className="mb-6 flex items-start justify-between gap-3 rounded-lg border bg-card px-4 py-3 text-sm"
           >
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
+            <span>{session.notice}</span>
+            <button
+              onClick={session.dismissNotice}
+              aria-label="Dismiss"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
 
-      <Tabs value={tab} onValueChange={(value) => setTab(parseTab(String(value)))}>
-        <TabsList>
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {planner.error && (
+          <div
+            role="alert"
+            className="mb-6 flex items-start justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
+          >
+            <span>{planner.error}</span>
+            <button
+              onClick={planner.dismissError}
+              aria-label="Dismiss"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
 
         {/* Only the first load has nothing to show. Later loads keep the
             current week on screen and dim it, so changing week does not blank
@@ -114,11 +121,9 @@ export default function App() {
         ) : (
           <div
             aria-busy={planner.loading}
-            className={
-              planner.loading ? "opacity-60 transition-opacity" : undefined
-            }
+            className={planner.loading ? "opacity-60 transition-opacity" : undefined}
           >
-            <TabsContent value="meals" className="pt-6">
+            {page.id === "meals" && (
               <MealsTab
                 state={planner.state}
                 pending={planner.mealsPending}
@@ -130,29 +135,27 @@ export default function App() {
                 onUpdateIngredient={planner.updateIngredient}
                 onRemoveIngredient={planner.removeIngredient}
               />
-            </TabsContent>
-
-            <TabsContent value="plan" className="pt-6">
+            )}
+            {page.id === "plan" && (
               <WeeklyPlanTab
                 state={planner.state}
                 pending={planner.planPending}
                 onSave={planner.savePlan}
                 onCopyPrevious={planner.copyPreviousWeek}
               />
-            </TabsContent>
-
-            <TabsContent value="grocery" className="pt-6">
+            )}
+            {page.id === "groceries" && (
               <GroceryTab
                 weekStart={planner.state.week_start}
                 lines={planner.grocery}
                 pending={planner.groceryPending}
                 onGenerate={planner.generateGroceryList}
               />
-            </TabsContent>
+            )}
           </div>
         )}
-      </Tabs>
-    </div>
+      </main>
+    </AppShell>
   );
 }
 
@@ -166,8 +169,9 @@ function WeekPicker({
   disabled: boolean;
 }) {
   return (
-    <div className="flex flex-col items-end gap-1.5">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <p className="text-sm text-muted-foreground tabular-nums">{formatWeekRange(week)}</p>
+      <div className="flex items-center gap-1.5">
         <Button
           variant="outline"
           size="icon"
@@ -188,7 +192,7 @@ function WeekPicker({
           onChange={(e) =>
             e.target.value && onChange(mondayOf(new Date(e.target.value)))
           }
-          className="w-40"
+          className="w-36"
         />
 
         <Button
@@ -201,7 +205,6 @@ function WeekPicker({
           <ChevronRight className="size-4" />
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">{formatWeekRange(week)}</p>
     </div>
   );
 }

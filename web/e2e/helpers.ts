@@ -33,8 +33,29 @@ export function mealRow(page: Page, name: string) {
   return page.getByRole("button", { name: `Edit ${name}`, exact: true });
 }
 
-/** Open the week in a given tab. Every spec works in its own week. */
-export async function openWeek(page: Page, week: string, tab = "meals") {
-  await page.goto(`/?tab=${tab}&week=${week}`);
-  await expect(page.getByLabel("Week starting")).toHaveValue(week);
+type PageName = "meals" | "plan" | "groceries";
+
+/**
+ * Open a page at a week. Every spec works in its own week. Meals are the
+ * same every week, so that page has no week picker; the week is still in
+ * the URL, and the other pages pick it up.
+ */
+export async function openWeek(page: Page, week: string, where: PageName = "meals") {
+  await page.goto(`/${where}?week=${week}`);
+  if (where === "meals") {
+    await expect(page.getByLabel("Meal name")).toBeVisible();
+  } else {
+    await expect(page.getByLabel("Week starting")).toHaveValue(week);
+  }
+}
+
+/** Change page through the navigation, as a person would. */
+export async function goTo(page: Page, label: "Meals" | "Plan" | "Groceries") {
+  await pageLink(page, label).click();
+}
+
+export function pageLink(page: Page, label: "Meals" | "Plan" | "Groceries") {
+  return page
+    .getByRole("navigation", { name: "Pages" })
+    .getByRole("link", { name: label, exact: true });
 }

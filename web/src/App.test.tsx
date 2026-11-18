@@ -42,38 +42,65 @@ async function renderApp(path = "/") {
   await waitFor(() => expect(screen.queryByText("Loading…")).not.toBeInTheDocument());
 }
 
-const selectedTab = () =>
-  screen.getAllByRole("tab").find((tab) => tab.getAttribute("aria-selected") === "true");
+const heading = () => screen.getByRole("heading", { level: 1 });
+const currentLink = () =>
+  within(screen.getByRole("navigation", { name: "Pages" }))
+    .getAllByRole("link")
+    .find((link) => link.getAttribute("aria-current") === "page");
 
-describe("the tab in the URL", () => {
-  it("opens on Meals by default", async () => {
+describe("pages", () => {
+  it("opens on the plan", async () => {
     await renderApp();
 
-    expect(selectedTab()).toHaveTextContent("Meals");
+    expect(heading()).toHaveTextContent("Weekly plan");
+    expect(currentLink()).toHaveTextContent("Plan");
+    expect(document.title).toBe("Weekly plan · Meal Planner");
   });
 
-  it("opens the tab named in the link", async () => {
-    await renderApp("/?tab=grocery");
+  it("opens the page in the link", async () => {
+    await renderApp("/groceries");
 
-    expect(selectedTab()).toHaveTextContent("Grocery List");
+    expect(heading()).toHaveTextContent("Groceries");
+    expect(currentLink()).toHaveTextContent("Groceries");
   });
 
-  it("ignores a tab it does not know", async () => {
-    await renderApp("/?tab=settings");
+  it("sends a path it does not know to the plan", async () => {
+    await renderApp("/settings");
 
-    expect(selectedTab()).toHaveTextContent("Meals");
+    expect(heading()).toHaveTextContent("Weekly plan");
   });
 
-  it("records the tab chosen, keeping the week", async () => {
+  it("changes page in place, keeping the week, with the back button working", async () => {
     const user = userEvent.setup();
-    await renderApp("/?week=2026-08-03");
+    await renderApp("/plan?week=2026-08-03");
 
-    await user.click(screen.getByRole("tab", { name: "Weekly Plan" }));
+    await user.click(screen.getByRole("link", { name: "Meals" }));
 
-    const params = new URLSearchParams(window.location.search);
-    expect(params.get("tab")).toBe("plan");
-    expect(params.get("week")).toBe("2026-08-03");
-    expect(selectedTab()).toHaveTextContent("Weekly Plan");
+    expect(window.location.pathname).toBe("/meals");
+    expect(new URLSearchParams(window.location.search).get("week")).toBe("2026-08-03");
+    expect(heading()).toHaveTextContent("Meals");
+    // Not a reload: the first load was the only one.
+    expect(mocked.getState).toHaveBeenCalledTimes(1);
+
+    window.history.back();
+    await waitFor(() => expect(heading()).toHaveTextContent("Weekly plan"));
+  });
+
+  it("links carry the week, so one opened in a new tab shows it too", async () => {
+    await renderApp("/plan?week=2026-08-03");
+
+    expect(screen.getByRole("link", { name: "Groceries" })).toHaveAttribute(
+      "href",
+      "/groceries?week=2026-08-03",
+    );
+  });
+
+  it("shows the week picker only where the week matters", async () => {
+    await renderApp("/meals");
+    expect(screen.queryByLabelText("Week starting")).not.toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole("link", { name: "Groceries" }));
+    expect(screen.getByLabelText("Week starting")).toBeInTheDocument();
   });
 });
 
@@ -90,7 +117,7 @@ describe("the account", () => {
   it("invites a guest to sign up, and keeps their meals when they do", async () => {
     const user = userEvent.setup();
     mocked.signUp.mockResolvedValue({ email: "cook@example.com", is_guest: false });
-    await renderApp();
+    await renderApp("/meals");
 
     await user.click(await screen.findByRole("button", { name: "Sign up to keep your meals" }));
     const dialog = screen.getByRole("dialog", { name: "Create an account" });
@@ -135,7 +162,7 @@ describe("the account", () => {
       );
       return account;
     });
-    await renderApp();
+    await renderApp("/meals");
 
     await user.click(await screen.findByRole("button", { name: "Log in" }));
     const dialog = screen.getByRole("dialog", { name: "Log in" });

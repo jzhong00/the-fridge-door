@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { addMeal, mealRow, openWeek, uniqueName } from "./helpers.ts";
+import { addMeal, goTo, mealRow, openWeek, uniqueName } from "./helpers.ts";
 
 test("each visitor gets their own guest session, invisible to anyone else", async ({
   browser,
@@ -37,15 +37,17 @@ test("a first visit lands in a guest session with sample meals planned this week
 }) => {
   await page.goto("/");
 
+  // Home is this week's plan, already part filled.
   await expect(page.getByText("You're using a guest session.")).toBeVisible();
-  for (const meal of ["Spaghetti Bolognese", "Tacos", "Butter Chicken"]) {
-    await expect(page.getByRole("article", { name: meal })).toBeVisible();
-  }
-  await page.getByRole("tab", { name: "Weekly Plan" }).click();
   await expect(page.getByRole("combobox", { name: "Monday" })).toContainText(
     "Spaghetti Bolognese",
   );
   await expect(page.getByRole("combobox", { name: "Wednesday" })).toContainText("No meal");
+
+  await goTo(page, "Meals");
+  for (const meal of ["Spaghetti Bolognese", "Tacos", "Butter Chicken"]) {
+    await expect(page.getByRole("article", { name: meal })).toBeVisible();
+  }
 });
 
 const sessionCookie = async (page: Page) =>
